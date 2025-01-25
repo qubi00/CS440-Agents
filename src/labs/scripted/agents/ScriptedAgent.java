@@ -182,13 +182,31 @@ public class ScriptedAgent
         Map<Integer, Action> actions = new HashMap<Integer, Action>();
 
         System.out.println("Running");
-        
-        Action action = null;
+
+        // Compound actions not allowed :'D
+        // Action action = null;
+        // if(state.getUnit(this.myUnitId).getCargoAmount() > 0){
+        //     actions.put(this.myUnitId, Action.createCompoundAttack(this.myUnitId, this.enemyUnitId));
+        // }else{
+        //     action = new TargetedAction(this.myUnitId, ActionType.COMPOUNDGATHER, this.goldResourceNodeId);
+        //     actions.put(this.myUnitId, action);
+        // }
+
+        //may refactor once i read through sepia's doc
         if(state.getUnit(this.myUnitId).getCargoAmount() > 0){
-            actions.put(this.myUnitId, Action.createCompoundAttack(this.myUnitId, this.enemyUnitId));
+            if(state.getUnit(this.myUnitId).getYPosition() != 0){
+                actions.put(this.myUnitId, Action.createPrimitiveMove(this.myUnitId, Direction.NORTH));
+            }else if(state.getUnit(this.myUnitId).getXPosition() != 6){
+                actions.put(this.myUnitId, Action.createPrimitiveMove(this.myUnitId, Direction.EAST));
+            }else{
+                actions.put(this.myUnitId, Action.createPrimitiveAttack(this.myUnitId, this.enemyUnitId));
+            }
         }else{
-            action = new TargetedAction(this.myUnitId, ActionType.COMPOUNDGATHER, this.goldResourceNodeId);
-            actions.put(this.myUnitId, action);
+            if(state.getUnit(this.myUnitId).getYPosition() != 1){
+                actions.put(this.myUnitId, Action.createPrimitiveMove(this.myUnitId, Direction.NORTH));
+            }else{
+                actions.put(this.myUnitId, Action.createPrimitiveGather(this.myUnitId, Direction.EAST));
+            }
         }
 
         return actions;
