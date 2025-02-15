@@ -2,7 +2,7 @@
 	<Map>data/labs/stealth/BigMazeMap.xml</Map>
 	<Player Id="0">
 		<AgentClass>
-			<ClassName>src.labs.stealth.agents.DijkstraMazeAgent</ClassName>
+			<ClassName>src.labs.stealth.agents.BFSMazeAgent</ClassName>
 			<Argument>0</Argument>
 		</AgentClass>
 	</Player>
