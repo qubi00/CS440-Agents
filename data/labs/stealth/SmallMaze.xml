@@ -2,7 +2,7 @@
 	<Map>data/labs/stealth/SmallMazeMap.xml</Map>
 	<Player Id="0">
 		<AgentClass>
-			<ClassName>src.labs.stealth.agents.DFSMazeAgent</ClassName>
+			<ClassName>src.labs.stealth.agents.DijkstraMazeAgent</ClassName>
 			<Argument>0</Argument>
 		</AgentClass>
 	</Player>
