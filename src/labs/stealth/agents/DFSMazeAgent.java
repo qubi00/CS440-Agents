@@ -37,7 +37,7 @@ public class DFSMazeAgent
         Stack<Path> q = new Stack<>();
         Set<Vertex> visited = new HashSet<>();
 
-        q.add(new Path(src, 1.0f, null));
+        q.add(new Path(src, 0f, null));
         visited.add(src);
 
         Direction[] directions = {Direction.NORTH, Direction.SOUTH, Direction.WEST, Direction.EAST,
@@ -46,42 +46,41 @@ public class DFSMazeAgent
         while(!q.isEmpty()){
             Path currPath = q.pop();
             Vertex currVertex = currPath.getDestination();
-            int currRow = currVertex.getXCoordinate();
-            int currCol = currVertex.getYCoordinate();
+            int X = currVertex.getXCoordinate();
+            int Y = currVertex.getYCoordinate();
 
             if(currVertex.equals(goal)){
-                System.out.println(currPath.toString());
                 return currPath;
             }
 
             
             for(int i = 0; i < directions.length; i++){
                 Direction dir = directions[i];
-                int newRow = currRow;
-                int newCol = currCol;
+                int newX = X;
+                int newY = Y;
                 if (dir == Direction.NORTH) {
-                    newRow -= 1;
+                    newY -= 1;
                 } else if (dir == Direction.SOUTH) {
-                    newRow += 1;
+                    newY += 1;
                 } else if (dir == Direction.WEST) {
-                    newCol -= 1;
+                    newX -= 1;
                 } else if (dir == Direction.EAST) {
-                    newCol += 1;
+                    newX += 1;
                 } else if (dir == Direction.NORTHEAST) {
-                    newRow -= 1;
-                    newCol += 1;
+                    newY -= 1;
+                    newX += 1;
                 } else if (dir == Direction.NORTHWEST) {
-                    newRow -= 1;
-                    newCol -= 1;
+                    newY -= 1;
+                    newX -= 1;
                 } else if (dir == Direction.SOUTHEAST) {
-                    newRow += 1;
-                    newCol += 1;
+                    newY += 1;
+                    newX += 1;
                 } else if (dir == Direction.SOUTHWEST) {
-                    newRow += 1;
-                    newCol -= 1;
+                    newY += 1;
+                    newX -= 1;
                 }
-                if(state.inBounds(newRow, newCol) && !state.isResourceAt(newRow, newCol) && !visited.contains(new Vertex(newRow, newCol))){
-                    Vertex neighbor = new Vertex(newRow, newCol);
+                if(state.inBounds(newX, newY) && !state.isResourceAt(newX, newY) && !visited.contains(new Vertex(newX, newY))){
+                    Vertex neighbor = new Vertex(newX, newY);
                     visited.add(neighbor);
                     Path newPath = new Path(neighbor, 1.0f, currPath);
                     q.add(newPath);

@@ -49,16 +49,16 @@ public class DijkstraMazeAgent
                 weight = 5f;
                 break;
             case NORTHEAST:
-                weight = (float) Math.sqrt(10 * 10 + 5 * 5);
+                weight = (float) Math.sqrt((10 * 10) + (5 * 5));
                 break;
             case NORTHWEST:
-                weight = (float) Math.sqrt(10 * 10 + 5 * 5);
+                weight = (float) Math.sqrt((10 * 10) + (5 * 5));
                 break;
             case SOUTHEAST:
-                weight = (float) Math.sqrt(1 * 1 + 5 * 5);
+                weight = (float) Math.sqrt((1 * 1) + (5 * 5));
                 break;
             case SOUTHWEST:
-                weight = (float) Math.sqrt(1 * 1 + 5 * 5);
+                weight = (float) Math.sqrt((1 * 1) + (5 * 5));
                 break;
         }
         return weight;
@@ -72,7 +72,6 @@ public class DijkstraMazeAgent
     {   
 
         PriorityQueue<Path> pq = new PriorityQueue<>(Comparator.comparing(Path::getTrueCost));
-        Set<Vertex> visited = new HashSet<>();
         Map<Vertex, Float> distance = new HashMap<>();
 
         pq.add(new Path(src, 0f, null));
@@ -80,59 +79,58 @@ public class DijkstraMazeAgent
 
         Direction[] directions = {Direction.NORTH, Direction.SOUTH, Direction.WEST, Direction.EAST,
             Direction.NORTHEAST, Direction.NORTHWEST, Direction.SOUTHEAST, Direction.SOUTHWEST};
-        
+            
         while(!pq.isEmpty()){
             Path currPath = pq.poll();
             Vertex currVertex = currPath.getDestination();
             Float currCost = currPath.getTrueCost();
 
-            if(visited.contains(currVertex)){
-                continue;
-            }
-            visited.add(currVertex);
-
 
             if(currVertex.equals(goal)){
                 System.out.println(currPath.toString());
+                System.out.println(currCost.toString());
                 return currPath;
             }
             
-            int currRow = currVertex.getXCoordinate();
-            int currCol = currVertex.getYCoordinate();
+            int X = currVertex.getXCoordinate();
+            int Y = currVertex.getYCoordinate();
             
             for(int i = 0; i < directions.length; i++){
                 Direction dir = directions[i];
-                int newRow = currRow;
-                int newCol = currCol;
+                int newX = X;
+                int newY = Y;
                 if (dir == Direction.NORTH) {
-                    newRow -= 1;
+                    newY -= 1;
                 } else if (dir == Direction.SOUTH) {
-                    newRow += 1;
+                    newY += 1;
                 } else if (dir == Direction.WEST) {
-                    newCol -= 1;
+                    newX -= 1;
                 } else if (dir == Direction.EAST) {
-                    newCol += 1;
+                    newX += 1;
                 } else if (dir == Direction.NORTHEAST) {
-                    newRow -= 1;
-                    newCol += 1;
+                    newY -= 1;
+                    newX += 1;
                 } else if (dir == Direction.NORTHWEST) {
-                    newRow -= 1;
-                    newCol -= 1;
+                    newY -= 1;
+                    newX -= 1;
                 } else if (dir == Direction.SOUTHEAST) {
-                    newRow += 1;
-                    newCol += 1;
+                    newY += 1;
+                    newX += 1;
                 } else if (dir == Direction.SOUTHWEST) {
-                    newRow += 1;
-                    newCol -= 1;
+                    newY += 1;
+                    newX -= 1;
                 }
-                if(state.inBounds(newRow, newCol) && !state.isResourceAt(newRow, newCol)){
-                    Vertex neighbor = new Vertex(newRow, newCol);
+                if(state.inBounds(newX, newY) && !state.isResourceAt(newX, newY)){
+                    Vertex neighbor = new Vertex(newX, newY);
                     float weight = getWeight(dir);
                     float newCost = currCost + weight;
+                    System.out.println("weight:" + weight);
+                    System.out.println("new cost:" + newCost);
 
                     if(!distance.containsKey(neighbor) || newCost < distance.get(neighbor)){
                         distance.put(neighbor, newCost);
-                        Path newPath = new Path(neighbor, newCost, currPath);
+                        Path newPath = new Path(neighbor, weight, currPath);
+                        System.out.println("going to:" + neighbor + "weight: " + newCost);
                         pq.add(newPath);
                     }
                 }
