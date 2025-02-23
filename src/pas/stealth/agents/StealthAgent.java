@@ -15,6 +15,8 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
+//
+import java.util.ArrayList;
 
 
 // JAVA PROJECT IMPORTS
@@ -36,6 +38,8 @@ public class StealthAgent
     // TODO: implement the state machine for following a path once we calculate it
     //       this will for sure adding your own fields.
     private int enemyChebyshevSightLimit;
+    private Path currentPath;
+    private AgentPhase phase;
     
 
     public StealthAgent(int playerNum)
@@ -43,6 +47,7 @@ public class StealthAgent
         super(playerNum);
 
         this.enemyChebyshevSightLimit = -1; // invalid value....we won't know this until initialStep()
+        phase = AgentPhase.INFILTRATE;
     }
 
     // TODO: add some getter methods for your fields! Thats the java way to do things!
@@ -115,6 +120,13 @@ public class StealthAgent
             once you have this working I would worry about trying to detect when you kill the townhall
             so that you implement escaping
          */
+        int unitId = this.getMyUnitID();
+
+        if(this.shouldReplacePlan(state))
+        {
+            Vertex start = new Vertex(state.getUnit(unitId).getXPosition(), state.getUnit(unitId).getXPosition());
+            Vertex goal = 
+        }
 
         return actions;
     }
@@ -122,12 +134,49 @@ public class StealthAgent
     ////////////////////////////////// End of Sepia methods to override //////////////////////////////////
 
     /////////////////////////////////// AStarAgent methods to override ///////////////////////////////////
+    
+    public boolean isValidMove(Vertex v, StateView state){
+        return(v.getXCoordinate() >= 0 && v.getYCoordinate() >= 0 && 
+        v.getXCoordinate() < state.getXExtent() && v.getYCoordinate() < state.getYExtent());
+    }
 
     public Collection<Vertex> getNeighbors(Vertex v,
                                            StateView state,
                                            ExtraParams extraParams)
-    {
-        return null;
+    {   
+        Collection<Vertex> neighbors = new ArrayList<>();
+        Vertex neighbor = null;
+        for (Direction dir : Direction.values()){
+            if(dir.equals(Direction.NORTH)){
+                neighbor = new Vertex(v.getXCoordinate(), v.getYCoordinate() - 1);
+            }else if(dir.equals(Direction.SOUTH)){
+                neighbor = new Vertex(v.getXCoordinate(), v.getYCoordinate() + 1);
+
+            }else if(dir.equals(Direction.EAST)){
+                neighbor = new Vertex(v.getXCoordinate() + 1, v.getYCoordinate());
+                
+            }else if(dir.equals(Direction.WEST)){
+                neighbor = new Vertex(v.getXCoordinate() - 1, v.getYCoordinate());
+                
+            }else if(dir.equals(Direction.NORTHEAST)){
+                neighbor = new Vertex(v.getXCoordinate() + 1, v.getYCoordinate() - 1);
+                
+            }else if(dir.equals(Direction.NORTHWEST)){
+                neighbor = new Vertex(v.getXCoordinate() - 1, v.getYCoordinate() - 1);
+                
+            }else if(dir.equals(Direction.SOUTHEAST)){
+                neighbor = new Vertex(v.getXCoordinate() + 1, v.getYCoordinate() + 1);
+                
+            }else if(dir.equals(Direction.SOUTHWEST)){
+                neighbor = new Vertex(v.getXCoordinate() - 1, v.getYCoordinate() + 1);
+            }
+
+            if(neighbor != null && isValidMove(neighbor, state) 
+            && state.isResourceAt(neighbor.getXCoordinate(), neighbor.getYCoordinate())){
+                neighbors.add(neighbor);
+            }
+        }
+        return neighbors;
     }
 
     public Path aStarSearch(Vertex src,
