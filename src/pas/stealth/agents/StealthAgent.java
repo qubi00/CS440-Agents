@@ -13,10 +13,14 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Map;
 //
 import java.util.ArrayList;
+import java.util.PriorityQueue;
+import java.util.Comparator;
+import java.util.Set;
 
 
 // JAVA PROJECT IMPORTS
@@ -184,6 +188,26 @@ public class StealthAgent
                             StateView state,
                             ExtraParams extraParams)
     {
+        PriorityQueue<Path> openList = new PriorityQueue<>(Comparator.comparingDouble(Path :: getTrueCost));
+        Set<Vertex> closedList = new HashSet<>();
+
+        while(!openList.isEmpty()){
+            Path currentPath = openList.poll();
+            Vertex current = currentPath.getDestination();
+
+            if(current.equals(dst)){
+                return currentPath;
+            }
+
+            closedList.add(current);
+            for(Vertex neighbor : getNeighbors(current, state, extraParams)){
+                if(!closedList.contains(neighbor)){
+                    Path newPath = new Path(neighbor, getEdgeWeight(current, dst, state, extraParams), currentPath);
+                    openList.add(newPath);
+                }
+            }
+        }
+
         return null;
     }
 
@@ -192,6 +216,9 @@ public class StealthAgent
                                StateView state,
                                ExtraParams extraParams)
     {
+        //path closer to enemy = higher weight
+        //path further = lower weight.
+        //should be heuristic function here
         return 1f;
     }
 
