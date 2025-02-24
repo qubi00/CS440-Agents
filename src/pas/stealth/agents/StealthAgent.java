@@ -287,7 +287,7 @@ public class StealthAgent
             UnitView enemy = state.getUnit(enemyId);
             float distanceCalc = calculateDistance(src.getXCoordinate(), src.getYCoordinate(), enemy.getXPosition(), enemy.getYPosition());
             if(distanceCalc < this.enemyChebyshevSightLimit){
-                riskCost += ((this.enemyChebyshevSightLimit - distanceCalc) * 5);
+                riskCost += ((this.enemyChebyshevSightLimit - distanceCalc) * 10);
             }
         }
         float goalDist = calculateDistance(src.getXCoordinate(), src.getYCoordinate(), dst.getXCoordinate(), dst.getYCoordinate());
