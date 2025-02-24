@@ -158,7 +158,7 @@ public class StealthAgent
 
         if(currentPath != null && !currentPos.equals(currentPath.getDestination())){
             //should be immediate move rather than last move
-            Vertex nextMove = currentPath.next;
+            Vertex nextMove = nextMove(currentPos);
             if(nextMove != null){
                 Direction nextDir = getDirectionToMoveTo(currentPos, nextMove);
                 actions.put(unitId, Action.createPrimitiveMove(unitId, nextDir));
@@ -178,6 +178,17 @@ public class StealthAgent
     }
 
     ////////////////////////////////// End of Sepia methods to override //////////////////////////////////
+    
+    public Vertex nextMove(Vertex currentPos){
+        Path temp = this.currentPath;
+        while(temp.getParentPath() != null){
+            if(temp.getParentPath().getDestination().equals(currentPos)){
+                return temp.getDestination();
+            }
+            temp = temp.getParentPath();
+        }
+        return null;
+    }
 
     /////////////////////////////////// AStarAgent methods to override ///////////////////////////////////
     
@@ -276,7 +287,7 @@ public class StealthAgent
             UnitView enemy = state.getUnit(enemyId);
             float distanceCalc = calculateDistance(src.getXCoordinate(), src.getYCoordinate(), enemy.getXPosition(), enemy.getYPosition());
             if(distanceCalc < this.enemyChebyshevSightLimit){
-                riskCost += (this.enemyChebyshevSightLimit - distanceCalc);
+                riskCost += ((this.enemyChebyshevSightLimit - distanceCalc) * 5);
             }
         }
         float goalDist = calculateDistance(src.getXCoordinate(), src.getYCoordinate(), dst.getXCoordinate(), dst.getYCoordinate());
