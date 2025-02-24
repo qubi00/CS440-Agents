@@ -44,6 +44,8 @@ public class StealthAgent
     private int enemyChebyshevSightLimit;
     private Path currentPath;
     private AgentPhase phase;
+    private boolean townhallDestroyed = false;
+    private Vertex startingPos;
     
 
     public StealthAgent(int playerNum)
@@ -125,7 +127,15 @@ public class StealthAgent
             so that you implement escaping
          */
         int unitId = this.getMyUnitID();
+        Vertex currentPos = new Vertex(state.getUnit(unitId).getXPosition(), state.getUnit(unitId).getYPosition());
 
+        if(phase == AgentPhase.INFILTRATE){
+            Vertex townhall = new Vertex(state.getUnit(getEnemyBaseUnitID()).getXPosition(),state.getUnit(getEnemyBaseUnitID()).getYPosition());
+            if(townhall == null){
+                townhallDestroyed = true;
+                phase = AgentPhase.EXFILTRATE;
+            }
+        }
         if(this.shouldReplacePlan(state))
         {
             Vertex start = new Vertex(state.getUnit(unitId).getXPosition(), state.getUnit(unitId).getXPosition());
@@ -191,6 +201,9 @@ public class StealthAgent
         PriorityQueue<Path> openList = new PriorityQueue<>(Comparator.comparingDouble(Path :: getTrueCost));
         Set<Vertex> closedList = new HashSet<>();
 
+        Path start = new Path(src, 0f, null);
+        openList.add(start);
+
         while(!openList.isEmpty()){
             Path currentPath = openList.poll();
             Vertex current = currentPath.getDestination();
@@ -202,13 +215,18 @@ public class StealthAgent
             closedList.add(current);
             for(Vertex neighbor : getNeighbors(current, state, extraParams)){
                 if(!closedList.contains(neighbor)){
-                    Path newPath = new Path(neighbor, getEdgeWeight(current, dst, state, extraParams), currentPath);
+                    float cost = getEdgeWeight(current, dst, state, extraParams);
+                    Path newPath = new Path(neighbor, currentPath.getTrueCost() + cost, currentPath);
                     openList.add(newPath);
                 }
             }
         }
 
         return null;
+    }
+
+    public static float calculateDistance(int x1, int y1, int x2, int y2) {
+        return (float)Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2));
     }
 
     public float getEdgeWeight(Vertex src,
@@ -219,13 +237,32 @@ public class StealthAgent
         //path closer to enemy = higher weight
         //path further = lower weight.
         //should be heuristic function here
-        return 1f;
+        float base = 1f;
+        float riskCost = 0f;
+
+        for(Integer enemyId: this.getOtherEnemyUnitIDs()){
+            UnitView enemy = state.getUnit(enemyId);
+            float distanceCalc = calculateDistance(src.getXCoordinate(), src.getYCoordinate(), enemy.getXPosition(), enemy.getYPosition());
+            if(distanceCalc < this.enemyChebyshevSightLimit){
+                riskCost += (this.enemyChebyshevSightLimit - distanceCalc);
+            }
+        }
+        float goalDist = calculateDistance(src.getXCoordinate(), src.getYCoordinate(), dst.getXCoordinate(), dst.getYCoordinate());
+        return base + riskCost + goalDist;
+
     }
 
     public boolean shouldReplacePlan(StateView state,
                                      ExtraParams extraParams)
     {
-        return false;
+        int unitId = this.getMyUnitID();
+        UnitView myUnit = state.getUnit(unitId);
+        Vertex currentPos = new Vertex(myUnit.getXPosition(), myUnit.getYPosition());
+        if(this.currentPath == null || currentPos.equals(currentPath.getDestination())){
+            return true;
+        }else{
+            return false;
+        }
     }
 
     //////////////////////////////// End of AStarAgent methods to override ///////////////////////////////
