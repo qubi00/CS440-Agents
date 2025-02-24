@@ -96,6 +96,9 @@ public class StealthAgent
         // as the enemy sight limit
         this.setEnemyChebyshevSightLimit(otherEnemyUnitView.getTemplateView().getRange());
 
+        UnitView myUnit = state.getUnit(this.getMyUnitID());
+        this.startingPos = new Vertex(myUnit.getXPosition(), myUnit.getYPosition());
+
         return null;
     }
 
@@ -128,18 +131,47 @@ public class StealthAgent
          */
         int unitId = this.getMyUnitID();
         Vertex currentPos = new Vertex(state.getUnit(unitId).getXPosition(), state.getUnit(unitId).getYPosition());
+        Vertex townhall = null;
 
         if(phase == AgentPhase.INFILTRATE){
-            Vertex townhall = new Vertex(state.getUnit(getEnemyBaseUnitID()).getXPosition(),state.getUnit(getEnemyBaseUnitID()).getYPosition());
-            if(townhall == null){
+            UnitView enemyBase = state.getUnit(getEnemyBaseUnitID());
+            if(enemyBase != null){
+                townhall = new Vertex(state.getUnit(getEnemyBaseUnitID()).getXPosition(),state.getUnit(getEnemyBaseUnitID()).getYPosition());
+            }else{
                 townhallDestroyed = true;
                 phase = AgentPhase.EXFILTRATE;
             }
         }
-        if(this.shouldReplacePlan(state))
+        if(this.shouldReplacePlan(state, null))
         {
-            Vertex start = new Vertex(state.getUnit(unitId).getXPosition(), state.getUnit(unitId).getXPosition());
-            Vertex goal = 
+            Vertex goal = null;
+            if(phase == AgentPhase.INFILTRATE){
+                goal = townhall;
+            }else if(phase == AgentPhase.EXFILTRATE){
+                goal = startingPos;
+            }
+            if(goal != null){
+                currentPath = aStarSearch(currentPos, goal, state, null);
+            }
+            
+        }
+
+        if(currentPath != null && !currentPos.equals(currentPath.getDestination())){
+            //should be immediate move rather than last move
+            Vertex nextMove = currentPath.next;
+            if(nextMove != null){
+                Direction nextDir = getDirectionToMoveTo(currentPos, nextMove);
+                actions.put(unitId, Action.createPrimitiveMove(unitId, nextDir));
+            }
+        }else{
+            //agent is in infiltrate plan, so it will attack. when it is in exfiltrate plan,
+            //once we finish traversing path we should be at starting point
+            if(phase == AgentPhase.INFILTRATE){
+                int townhallId = getEnemyBaseUnitID();
+                if(townhallId != -1){
+                    actions.put(unitId, Action.createCompoundAttack(unitId, townhallId));
+                }
+            }
         }
 
         return actions;
