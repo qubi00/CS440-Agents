@@ -99,6 +99,7 @@ public class StealthAgent
         UnitView myUnit = state.getUnit(this.getMyUnitID());
         this.startingPos = new Vertex(myUnit.getXPosition(), myUnit.getYPosition());
 
+
         return null;
     }
 
@@ -142,19 +143,29 @@ public class StealthAgent
                 phase = AgentPhase.EXFILTRATE;
             }
         }
-        if(this.shouldReplacePlan(state, null))
-        {
-            Vertex goal = null;
+
+        Vertex goal = null;
+        if(this.shouldReplacePlan(state, null)){
             if(phase == AgentPhase.INFILTRATE){
                 goal = townhall;
             }else if(phase == AgentPhase.EXFILTRATE){
                 goal = startingPos;
+                //goal of startingPos is correctly set
             }
             if(goal != null){
                 currentPath = aStarSearch(currentPos, goal, state, null);
+                System.out.println(currentPath);
             }
-            
         }
+
+        if(phase == AgentPhase.INFILTRATE && townhall != null && isAdjacent(currentPos, townhall)){
+            int townhallId = getEnemyBaseUnitID();
+            if(townhallId != -1){
+                actions.put(unitId, Action.createPrimitiveAttack(unitId, townhallId));
+            }
+            return actions;
+        }
+
 
         if(currentPath != null && !currentPos.equals(currentPath.getDestination())){
             //should be immediate move rather than last move
@@ -169,7 +180,7 @@ public class StealthAgent
             if(phase == AgentPhase.INFILTRATE){
                 int townhallId = getEnemyBaseUnitID();
                 if(townhallId != -1){
-                    actions.put(unitId, Action.createCompoundAttack(unitId, townhallId));
+                    actions.put(unitId, Action.createPrimitiveAttack(unitId, townhallId));
                 }
             }
         }
@@ -228,12 +239,43 @@ public class StealthAgent
                 neighbor = new Vertex(v.getXCoordinate() - 1, v.getYCoordinate() + 1);
             }
 
-            if(neighbor != null && isValidMove(neighbor, state) 
-            && state.isResourceAt(neighbor.getXCoordinate(), neighbor.getYCoordinate())){
-                neighbors.add(neighbor);
+            if(neighbor != null && isValidMove(neighbor, state)){
+                UnitView enemyBase = state.getUnit(getEnemyBaseUnitID());
+                Vertex townhallPos = null;
+                if(enemyBase != null){
+                    townhallPos = new Vertex(enemyBase.getXPosition(), enemyBase.getYPosition());
+                }
+                //found the townhall or if no resources, then it's a valid neighbor
+                if((townhallPos != null && neighbor.equals(townhallPos)) || 
+                !state.isResourceAt(neighbor.getXCoordinate(), neighbor.getYCoordinate())){
+                    neighbors.add(neighbor);
+                }
             }
         }
         return neighbors;
+    }
+    public float heuristic(Vertex src, Vertex dst, StateView state){
+        float goal = 1f;
+        float enemyCost = 0f;
+
+        float goalDist = calculateDistance(src.getXCoordinate(), src.getYCoordinate(), dst.getXCoordinate(), dst.getYCoordinate());
+        Iterator<Integer> enemyIterator = getOtherEnemyUnitIDs().iterator();
+
+        while(enemyIterator.hasNext()){
+            UnitView enemyId = state.getUnit(enemyIterator.next());
+            Vertex enemy = new Vertex(enemyId.getXPosition(), enemyId.getYPosition());
+            float enemyDist = calculateDistance(src.getXCoordinate(), src.getYCoordinate(), enemy.getXCoordinate(), enemy.getYCoordinate());
+            if(enemyDist > 0){
+                enemyCost += (1f / enemyDist);
+            }
+        }
+        return (goal * goalDist - 2 * enemyCost);
+
+    }
+
+    public boolean isAdjacent(Vertex v1, Vertex v2) {
+        return Math.abs(v1.getXCoordinate() - v2.getXCoordinate()) <= 1 &&
+               Math.abs(v1.getYCoordinate() - v2.getYCoordinate()) <= 1;
     }
 
     public Path aStarSearch(Vertex src,
@@ -241,11 +283,13 @@ public class StealthAgent
                             StateView state,
                             ExtraParams extraParams)
     {
-        PriorityQueue<Path> openList = new PriorityQueue<>(Comparator.comparingDouble(Path :: getTrueCost));
+        PriorityQueue<Path> openList = new PriorityQueue<>(Comparator.comparingDouble(path -> path.getTrueCost()  + getHeuristicValue(path.getDestination(), dst, state)));
         Set<Vertex> closedList = new HashSet<>();
+        Map<Vertex, Float> currentCost = new HashMap<>();
 
         Path start = new Path(src, 0f, null);
         openList.add(start);
+        currentCost.put(src, 0f);
 
         while(!openList.isEmpty()){
             Path currentPath = openList.poll();
@@ -256,16 +300,23 @@ public class StealthAgent
             }
 
             closedList.add(current);
+
             for(Vertex neighbor : getNeighbors(current, state, extraParams)){
-                if(!closedList.contains(neighbor)){
-                    float cost = getEdgeWeight(current, dst, state, extraParams);
-                    Path newPath = new Path(neighbor, currentPath.getTrueCost() + cost, currentPath);
+                if(closedList.contains(neighbor)){
+                    continue;
+                }
+                float cost = getEdgeWeight(current, neighbor, state, extraParams);
+                float newTotalCost = currentPath.getTrueCost() + cost;
+                if(!currentCost.containsKey(neighbor) || newTotalCost < currentCost.get(neighbor)){
+                    currentCost.put(neighbor, newTotalCost);
+                    Path newPath = new Path(neighbor, newTotalCost, currentPath);
                     openList.add(newPath);
                 }
+                
             }
         }
 
-        return null;
+        return currentPath;
     }
 
     public static float calculateDistance(int x1, int y1, int x2, int y2) {
@@ -287,7 +338,7 @@ public class StealthAgent
             UnitView enemy = state.getUnit(enemyId);
             float distanceCalc = calculateDistance(src.getXCoordinate(), src.getYCoordinate(), enemy.getXPosition(), enemy.getYPosition());
             if(distanceCalc < this.enemyChebyshevSightLimit){
-                riskCost += ((this.enemyChebyshevSightLimit - distanceCalc) * 10);
+                riskCost += ((this.enemyChebyshevSightLimit - distanceCalc) * 50);
             }
         }
         float goalDist = calculateDistance(src.getXCoordinate(), src.getYCoordinate(), dst.getXCoordinate(), dst.getYCoordinate());
@@ -301,7 +352,21 @@ public class StealthAgent
         int unitId = this.getMyUnitID();
         UnitView myUnit = state.getUnit(unitId);
         Vertex currentPos = new Vertex(myUnit.getXPosition(), myUnit.getYPosition());
-        if(this.currentPath == null || currentPos.equals(currentPath.getDestination())){
+        Vertex goal = null;
+
+        if(phase == AgentPhase.INFILTRATE){
+            UnitView enemyBase = state.getUnit(getEnemyBaseUnitID());
+            if(enemyBase != null){
+                goal = new Vertex(enemyBase.getXPosition(), enemyBase.getYPosition());
+            }else{
+                goal = startingPos;
+            }
+        }else if(phase == AgentPhase.EXFILTRATE){
+            goal = startingPos;
+        }
+
+        if(this.currentPath == null || currentPos.equals(currentPath.getDestination())
+        || !currentPath.getDestination().equals(goal)){
             return true;
         }else{
             return false;
