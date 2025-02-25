@@ -323,6 +323,17 @@ public class StealthAgent
         return (float)Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2));
     }
 
+    public boolean within_three(Vertex v, StateView state){
+        for(Integer enemyId: this.getOtherEnemyUnitIDs()){
+            UnitView enemy = state.getUnit(enemyId);
+            float distanceCalc = calculateDistance(v.getXCoordinate(), v.getYCoordinate(), enemy.getXPosition(), enemy.getYPosition());
+            if(distanceCalc <= 3){
+                return true;
+            }
+        }
+        return false;
+    }
+
     public float getEdgeWeight(Vertex src,
                                Vertex dst,
                                StateView state,
@@ -334,13 +345,20 @@ public class StealthAgent
         float base = 1f;
         float riskCost = 0f;
 
-        for(Integer enemyId: this.getOtherEnemyUnitIDs()){
-            UnitView enemy = state.getUnit(enemyId);
-            float distanceCalc = calculateDistance(src.getXCoordinate(), src.getYCoordinate(), enemy.getXPosition(), enemy.getYPosition());
-            if(distanceCalc < this.enemyChebyshevSightLimit){
-                riskCost += ((this.enemyChebyshevSightLimit - distanceCalc) * 50);
+        float danger = 1000f;
+        //2 blocks is the edge. enemy can move 1 more, so 3 should be safe
+        if(within_three(dst, state)){
+            riskCost += danger;
+        }else{
+            for(Integer enemyId: this.getOtherEnemyUnitIDs()){
+                UnitView enemy = state.getUnit(enemyId);
+                float distanceCalc = calculateDistance(src.getXCoordinate(), src.getYCoordinate(), enemy.getXPosition(), enemy.getYPosition());
+                if(distanceCalc < this.enemyChebyshevSightLimit){
+                    riskCost += ((this.enemyChebyshevSightLimit - distanceCalc) * 500);
+                }
             }
         }
+
         float goalDist = calculateDistance(src.getXCoordinate(), src.getYCoordinate(), dst.getXCoordinate(), dst.getYCoordinate());
         return base + riskCost + goalDist;
 
