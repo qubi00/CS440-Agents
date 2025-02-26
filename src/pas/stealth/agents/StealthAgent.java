@@ -153,8 +153,8 @@ public class StealthAgent
                 //goal of startingPos is correctly set
             }
             if(goal != null){
+                //currentPath should return a path assuming enemies are obstacles if within danger zone
                 currentPath = aStarSearch(currentPos, goal, state, null);
-                System.out.println(currentPath);
             }
         }
 
@@ -208,6 +208,17 @@ public class StealthAgent
         v.getXCoordinate() < state.getXExtent() && v.getYCoordinate() < state.getYExtent());
     }
 
+    public boolean isPathSafe(Path p, StateView state){
+        Path temp = p;
+        while(temp != null){
+            if(danger_zone(temp.getDestination(), state)){
+                return false;
+            }
+            temp = temp.getParentPath();
+        }
+        return true;
+    }
+
     public Collection<Vertex> getNeighbors(Vertex v,
                                            StateView state,
                                            ExtraParams extraParams)
@@ -245,8 +256,13 @@ public class StealthAgent
                 if(enemyBase != null){
                     townhallPos = new Vertex(enemyBase.getXPosition(), enemyBase.getYPosition());
                 }
+
+                if(danger_zone(neighbor, state)){
+                    continue;
+                }
+
                 //found the townhall or if no resources, then it's a valid neighbor
-                if((townhallPos != null && neighbor.equals(townhallPos)) || 
+                if((townhallPos != null && neighbor.equals(townhallPos)) ||
                 !state.isResourceAt(neighbor.getXCoordinate(), neighbor.getYCoordinate())){
                     neighbors.add(neighbor);
                 }
@@ -323,11 +339,11 @@ public class StealthAgent
         return (float)Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2));
     }
 
-    public boolean within_three(Vertex v, StateView state){
+    public boolean danger_zone(Vertex v, StateView state){
         for(Integer enemyId: this.getOtherEnemyUnitIDs()){
             UnitView enemy = state.getUnit(enemyId);
             float distanceCalc = calculateDistance(v.getXCoordinate(), v.getYCoordinate(), enemy.getXPosition(), enemy.getYPosition());
-            if(distanceCalc <= 3){
+            if(distanceCalc <= 2.5){
                 return true;
             }
         }
@@ -347,12 +363,14 @@ public class StealthAgent
 
         float danger = 1000f;
         //2 blocks is the edge. enemy can move 1 more, so 3 should be safe
-        if(within_three(dst, state)){
+        if(danger_zone(dst, state)){
+            //Note: if we are currently within this danger zone, should recalc to get away.
+            //Note2: what happens if we assume enemies are secondary obstacles?
             riskCost += danger;
         }else{
             for(Integer enemyId: this.getOtherEnemyUnitIDs()){
                 UnitView enemy = state.getUnit(enemyId);
-                float distanceCalc = calculateDistance(src.getXCoordinate(), src.getYCoordinate(), enemy.getXPosition(), enemy.getYPosition());
+                float distanceCalc = calculateDistance(dst.getXCoordinate(), dst.getYCoordinate(), enemy.getXPosition(), enemy.getYPosition());
                 if(distanceCalc < this.enemyChebyshevSightLimit){
                     riskCost += ((this.enemyChebyshevSightLimit - distanceCalc) * 500);
                 }
@@ -384,7 +402,7 @@ public class StealthAgent
         }
 
         if(this.currentPath == null || currentPos.equals(currentPath.getDestination())
-        || !currentPath.getDestination().equals(goal)){
+        || !currentPath.getDestination().equals(goal) || !isPathSafe(currentPath, state)){
             return true;
         }else{
             return false;
