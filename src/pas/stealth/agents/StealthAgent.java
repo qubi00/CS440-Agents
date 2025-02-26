@@ -41,6 +41,13 @@ public class StealthAgent
     private Path currentPath;
     private AgentPhase phase;
     private Vertex startingPos;
+
+    //for path risk calc
+    private float riskMultiplier = 100f;
+    //risk weight should be a little higher than the cap, so if it's adjacent
+    //then it will avoid the path
+    private float riskWeight = 400f;
+    private float dangerCap = 300f;
     
 
     public StealthAgent(int playerNum)
@@ -179,7 +186,7 @@ public class StealthAgent
     public boolean isPathSafe(Path p, StateView state){
         Path temp = p;
         while(temp != null){
-            if(danger_zone(temp.getDestination(), state)){
+            if(calculateRisk(temp.getDestination(), state) > dangerCap){
                 return false;
             }
             temp = temp.getParentPath();
@@ -224,7 +231,8 @@ public class StealthAgent
             }
             neighbor = new Vertex(x, y);
 
-            if(!isValidMove(neighbor, state) || danger_zone(neighbor, state) || neighbor == null){
+            //not valid move or too dangerous
+            if(!isValidMove(neighbor, state) || calculateRisk(neighbor, state) > dangerCap){
                     continue;
             }            
 
@@ -237,22 +245,19 @@ public class StealthAgent
         }
         return neighbors;
     }
+
+
     public float heuristic(Vertex src, Vertex dst, StateView state){
-        float goal = 1f;
-        float enemyCost = 0f;
-
-        float goalDist = calculateDistance(src.getXCoordinate(), src.getYCoordinate(), dst.getXCoordinate(), dst.getYCoordinate());
-        Iterator<Integer> enemyIterator = getOtherEnemyUnitIDs().iterator();
-
-        while(enemyIterator.hasNext()){
-            UnitView enemyId = state.getUnit(enemyIterator.next());
-            Vertex enemy = new Vertex(enemyId.getXPosition(), enemyId.getYPosition());
-            float enemyDist = calculateDistance(src.getXCoordinate(), src.getYCoordinate(), enemy.getXCoordinate(), enemy.getYCoordinate());
-            if(enemyDist > 0){
-                enemyCost += (1f / enemyDist);
-            }
+        int goalDist = calculateDistance(src, dst);
+        float enemyRisk = 0f;
+        
+        for (Integer enemyId : getOtherEnemyUnitIDs()) {
+            UnitView enemy = state.getUnit(enemyId);
+            Vertex enemyPos = new Vertex(enemy.getXPosition(), enemy.getYPosition());
+            int enemyDist = calculateDistance(src, enemyPos);
+            enemyRisk += (1f / enemyDist);
         }
-        return (goal * goalDist - 2 * enemyCost);
+        return (goalDist + riskMultiplier * enemyRisk);
 
     }
 
@@ -302,19 +307,19 @@ public class StealthAgent
         return currentPath;
     }
 
-    public static float calculateDistance(int x1, int y1, int x2, int y2) {
-        return (float)Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2));
+    public static int calculateDistance(Vertex agent, Vertex enemy) {
+        return Math.max(Math.abs(agent.getXCoordinate() - enemy.getXCoordinate()), Math.abs(agent.getYCoordinate() - enemy.getYCoordinate()));
     }
 
-    public boolean danger_zone(Vertex v, StateView state){
-        for(Integer enemyId: this.getOtherEnemyUnitIDs()){
+    public float calculateRisk(Vertex v, StateView state){
+        float totalRisk = 0f;
+        for(Integer enemyId: getOtherEnemyUnitIDs()){
             UnitView enemy = state.getUnit(enemyId);
-            float distanceCalc = calculateDistance(v.getXCoordinate(), v.getYCoordinate(), enemy.getXPosition(), enemy.getYPosition());
-            if(distanceCalc <= 2.5){
-                return true;
-            }
+            Vertex enemyPos = new Vertex(enemy.getXPosition(), enemy.getYPosition());
+            int distanceCalc = calculateDistance(v, enemyPos);
+            totalRisk += riskWeight/(float)distanceCalc;
         }
-        return false;
+        return totalRisk;
     }
 
     public float getEdgeWeight(Vertex src,
@@ -324,27 +329,9 @@ public class StealthAgent
     {
         //path closer to enemy = higher weight
         //path further = lower weight.
-        //should be heuristic function here
         float base = 1f;
-        float riskCost = 0f;
-
-        float danger = 100f;
-        //2 blocks is the edge. enemy can move 1 more, so 3 should be safe
-        if(danger_zone(dst, state)){
-            //Note: if we are currently within this danger zone, should recalc to get away.
-            //Note2: what happens if we assume enemies are secondary obstacles?
-            riskCost += danger;
-        }else{
-            for(Integer enemyId: this.getOtherEnemyUnitIDs()){
-                UnitView enemy = state.getUnit(enemyId);
-                float distanceCalc = calculateDistance(dst.getXCoordinate(), dst.getYCoordinate(), enemy.getXPosition(), enemy.getYPosition());
-                if(distanceCalc < this.enemyChebyshevSightLimit){
-                    riskCost += ((this.enemyChebyshevSightLimit - distanceCalc) * 50);
-                }
-            }
-        }
-
-        float goalDist = calculateDistance(src.getXCoordinate(), src.getYCoordinate(), dst.getXCoordinate(), dst.getYCoordinate());
+        float riskCost = calculateRisk(dst, state);
+        int goalDist = calculateDistance(src, dst);
         return base + riskCost + goalDist;
 
     }
