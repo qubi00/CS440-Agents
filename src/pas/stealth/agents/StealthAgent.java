@@ -43,11 +43,11 @@ public class StealthAgent
     private Vertex startingPos;
 
     //for path risk calc
-    private float riskMultiplier = 150f;
+    private float riskMultiplier;
     //risk weight should be a little higher than the cap, so if it's adjacent
     //then it will avoid the path
-    private float riskWeight = 700f;
-    private float dangerCap = 600f;
+    private float riskWeight;
+    private float dangerCap;
 
     private float unitRange = 5f;
     
@@ -97,6 +97,19 @@ public class StealthAgent
 
         UnitView myUnit = state.getUnit(this.getMyUnitID());
         this.startingPos = new Vertex(myUnit.getXPosition(), myUnit.getYPosition());
+
+        //calculate the risk and danger cap ratio
+        float x = state.getXExtent();
+        float y = state.getYExtent();
+        float scale = (x+y)/2f;
+
+        riskMultiplier = scale * 20;
+        riskWeight = scale * 40f;
+        dangerCap = scale * 32f;
+
+        System.out.println(riskMultiplier);
+        System.out.println(riskWeight);
+        System.out.println(dangerCap);
 
 
         return null;
