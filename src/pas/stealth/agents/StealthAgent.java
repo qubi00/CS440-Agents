@@ -37,14 +37,9 @@ public class StealthAgent
 {
 
     // Fields of this class
-    // TODO: add your fields here! For instance, it might be a good idea to
-    // know when you've killed the enemy townhall so you know when to escape!
-    // TODO: implement the state machine for following a path once we calculate it
-    //       this will for sure adding your own fields.
     private int enemyChebyshevSightLimit;
     private Path currentPath;
     private AgentPhase phase;
-    private boolean townhallDestroyed = false;
     private Vertex startingPos;
     
 
@@ -56,7 +51,6 @@ public class StealthAgent
         phase = AgentPhase.INFILTRATE;
     }
 
-    // TODO: add some getter methods for your fields! Thats the java way to do things!
     public final int getEnemyChebyshevSightLimit() { return this.enemyChebyshevSightLimit; }
 
     public void setEnemyChebyshevSightLimit(int i) { this.enemyChebyshevSightLimit = i; }
@@ -64,10 +58,6 @@ public class StealthAgent
 
     ///////////////////////////////////////// Sepia methods to override ///////////////////////////////////
 
-    /**
-        TODO: if you add any fields to this class it might be a good idea to initialize them here
-              if they need sepia information!
-     */
     @Override
     public Map<Integer, Action> initialStep(StateView state,
                                             HistoryView history)
@@ -103,33 +93,13 @@ public class StealthAgent
         return null;
     }
 
-    /**
-        TODO: implement me! This is the method that will be called every turn of the game.
-              This method is responsible for assigning actions to all units that you control
-              (which should only be a single footman in this game)
-     */
+
     @Override
     public Map<Integer, Action> middleStep(StateView state,
                                            HistoryView history)
     {
         Map<Integer, Action> actions = new HashMap<Integer, Action>();
 
-        /**
-            I would suggest implementing a state machine here to calculate a path when neccessary.
-            For instance beginning with something like:
-
-            if(this.shouldReplacePlan(state))
-            {
-                // recalculate the plan
-            }
-
-            then after this, worry about how you will follow this path by submitting sepia actions
-            the trouble is that we don't want to move on from a point on the path until we reach it
-            so be sure to take that into account in your design
-
-            once you have this working I would worry about trying to detect when you kill the townhall
-            so that you implement escaping
-         */
         int unitId = this.getMyUnitID();
         Vertex currentPos = new Vertex(state.getUnit(unitId).getXPosition(), state.getUnit(unitId).getYPosition());
         Vertex townhall = null;
@@ -137,9 +107,8 @@ public class StealthAgent
         if(phase == AgentPhase.INFILTRATE){
             UnitView enemyBase = state.getUnit(getEnemyBaseUnitID());
             if(enemyBase != null){
-                townhall = new Vertex(state.getUnit(getEnemyBaseUnitID()).getXPosition(),state.getUnit(getEnemyBaseUnitID()).getYPosition());
+                townhall = new Vertex(enemyBase.getXPosition(),enemyBase.getYPosition());
             }else{
-                townhallDestroyed = true;
                 phase = AgentPhase.EXFILTRATE;
             }
         }
@@ -150,7 +119,6 @@ public class StealthAgent
                 goal = townhall;
             }else if(phase == AgentPhase.EXFILTRATE){
                 goal = startingPos;
-                //goal of startingPos is correctly set
             }
             if(goal != null){
                 //currentPath should return a path assuming enemies are obstacles if within danger zone
@@ -158,6 +126,7 @@ public class StealthAgent
             }
         }
 
+        //attack townhall if it exists, we are in infiltrate mode, and the townhall is right next to us
         if(phase == AgentPhase.INFILTRATE && townhall != null && isAdjacent(currentPos, townhall)){
             int townhallId = getEnemyBaseUnitID();
             if(townhallId != -1){
@@ -168,7 +137,6 @@ public class StealthAgent
 
 
         if(currentPath != null && !currentPos.equals(currentPath.getDestination())){
-            //should be immediate move rather than last move
             Vertex nextMove = nextMove(currentPos);
             if(nextMove != null){
                 Direction nextDir = getDirectionToMoveTo(currentPos, nextMove);
@@ -223,50 +191,49 @@ public class StealthAgent
                                            StateView state,
                                            ExtraParams extraParams)
     {   
+        UnitView enemyBase = state.getUnit(getEnemyBaseUnitID());
+        Vertex townhallPos = null;
+        if(enemyBase != null){
+            townhallPos = new Vertex(enemyBase.getXPosition(), enemyBase.getYPosition());
+        }
+
         Collection<Vertex> neighbors = new ArrayList<>();
         Vertex neighbor = null;
+
         for (Direction dir : Direction.values()){
-            if(dir.equals(Direction.NORTH)){
-                neighbor = new Vertex(v.getXCoordinate(), v.getYCoordinate() - 1);
-            }else if(dir.equals(Direction.SOUTH)){
-                neighbor = new Vertex(v.getXCoordinate(), v.getYCoordinate() + 1);
+            int x = v.getXCoordinate();
+            int y = v.getYCoordinate();
+            switch(dir){
+                case NORTH: y -= 1; 
+                break;
+                case SOUTH: y += 1; 
+                break;
+                case EAST: x += 1; 
+                break;
+                case WEST: x -= 1; 
+                break;
+                case NORTHEAST: x += 1; y -= 1; 
+                break;
+                case NORTHWEST: x -= 1; y -= 1;
+                break;
+                case SOUTHEAST: x += 1; y += 1;
+                break;
+                case SOUTHWEST: x -= 1; y += 1;
+                break;
 
-            }else if(dir.equals(Direction.EAST)){
-                neighbor = new Vertex(v.getXCoordinate() + 1, v.getYCoordinate());
-                
-            }else if(dir.equals(Direction.WEST)){
-                neighbor = new Vertex(v.getXCoordinate() - 1, v.getYCoordinate());
-                
-            }else if(dir.equals(Direction.NORTHEAST)){
-                neighbor = new Vertex(v.getXCoordinate() + 1, v.getYCoordinate() - 1);
-                
-            }else if(dir.equals(Direction.NORTHWEST)){
-                neighbor = new Vertex(v.getXCoordinate() - 1, v.getYCoordinate() - 1);
-                
-            }else if(dir.equals(Direction.SOUTHEAST)){
-                neighbor = new Vertex(v.getXCoordinate() + 1, v.getYCoordinate() + 1);
-                
-            }else if(dir.equals(Direction.SOUTHWEST)){
-                neighbor = new Vertex(v.getXCoordinate() - 1, v.getYCoordinate() + 1);
             }
+            neighbor = new Vertex(x, y);
 
-            if(neighbor != null && isValidMove(neighbor, state)){
-                UnitView enemyBase = state.getUnit(getEnemyBaseUnitID());
-                Vertex townhallPos = null;
-                if(enemyBase != null){
-                    townhallPos = new Vertex(enemyBase.getXPosition(), enemyBase.getYPosition());
-                }
-
-                if(danger_zone(neighbor, state)){
+            if(!isValidMove(neighbor, state) || danger_zone(neighbor, state) || neighbor == null){
                     continue;
-                }
+            }            
 
-                //found the townhall or if no resources, then it's a valid neighbor
-                if((townhallPos != null && neighbor.equals(townhallPos)) ||
-                !state.isResourceAt(neighbor.getXCoordinate(), neighbor.getYCoordinate())){
-                    neighbors.add(neighbor);
-                }
+            //found the townhall or if no resources, then it's a valid neighbor
+            if((townhallPos != null && neighbor.equals(townhallPos)) ||
+            !state.isResourceAt(neighbor.getXCoordinate(), neighbor.getYCoordinate())){
+                neighbors.add(neighbor);
             }
+            
         }
         return neighbors;
     }
@@ -361,7 +328,7 @@ public class StealthAgent
         float base = 1f;
         float riskCost = 0f;
 
-        float danger = 1000f;
+        float danger = 100f;
         //2 blocks is the edge. enemy can move 1 more, so 3 should be safe
         if(danger_zone(dst, state)){
             //Note: if we are currently within this danger zone, should recalc to get away.
@@ -372,7 +339,7 @@ public class StealthAgent
                 UnitView enemy = state.getUnit(enemyId);
                 float distanceCalc = calculateDistance(dst.getXCoordinate(), dst.getYCoordinate(), enemy.getXPosition(), enemy.getYPosition());
                 if(distanceCalc < this.enemyChebyshevSightLimit){
-                    riskCost += ((this.enemyChebyshevSightLimit - distanceCalc) * 500);
+                    riskCost += ((this.enemyChebyshevSightLimit - distanceCalc) * 50);
                 }
             }
         }
