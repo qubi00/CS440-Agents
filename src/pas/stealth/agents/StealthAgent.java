@@ -43,11 +43,13 @@ public class StealthAgent
     private Vertex startingPos;
 
     //for path risk calc
-    private float riskMultiplier = 100f;
+    private float riskMultiplier = 150f;
     //risk weight should be a little higher than the cap, so if it's adjacent
     //then it will avoid the path
-    private float riskWeight = 400f;
-    private float dangerCap = 300f;
+    private float riskWeight = 700f;
+    private float dangerCap = 600f;
+
+    private float unitRange = 5f;
     
 
     public StealthAgent(int playerNum)
@@ -316,7 +318,13 @@ public class StealthAgent
         for(Integer enemyId: getOtherEnemyUnitIDs()){
             UnitView enemy = state.getUnit(enemyId);
             Vertex enemyPos = new Vertex(enemy.getXPosition(), enemy.getYPosition());
+
+            //enemies too far dont matter
             int distanceCalc = calculateDistance(v, enemyPos);
+            if(distanceCalc > unitRange){
+                continue;
+            }
+
             totalRisk += riskWeight/(float)distanceCalc;
         }
         return totalRisk;
@@ -332,7 +340,7 @@ public class StealthAgent
         float base = 1f;
         float riskCost = calculateRisk(dst, state);
         int goalDist = calculateDistance(src, dst);
-        return base + riskCost + goalDist;
+        return base + riskCost + (.5f * goalDist);
 
     }
 
