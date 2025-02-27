@@ -21,6 +21,7 @@ import java.util.ArrayList;
 import java.util.PriorityQueue;
 import java.util.Comparator;
 import java.util.Set;
+import java.util.List;
 
 
 // JAVA PROJECT IMPORTS
@@ -41,6 +42,8 @@ public class StealthAgent
     private Path currentPath;
     private AgentPhase phase;
     private Vertex startingPos;
+    private List<Vertex> currentRoute;
+    private int routeIndex;
 
     //for path risk calc
     private float riskMultiplier;
@@ -103,8 +106,8 @@ public class StealthAgent
         float y = state.getYExtent();
         float scale = (x+y)/2f;
 
-        riskMultiplier = scale * 20;
-        riskWeight = scale * 40f;
+        riskMultiplier = scale * 22;
+        riskWeight = scale * 42f;
         dangerCap = scale * 32f;
 
         System.out.println(riskMultiplier);
@@ -145,6 +148,8 @@ public class StealthAgent
             if(goal != null){
                 //currentPath should return a path assuming enemies are obstacles if within danger zone
                 currentPath = aStarSearch(currentPos, goal, state, null);
+                routeIndex = 0;
+                currentRoute = pathToList(currentPath);
             }
         }
 
@@ -181,14 +186,34 @@ public class StealthAgent
     ////////////////////////////////// End of Sepia methods to override //////////////////////////////////
     
     public Vertex nextMove(Vertex currentPos){
-        Path temp = this.currentPath;
-        while(temp.getParentPath() != null){
-            if(temp.getParentPath().getDestination().equals(currentPos)){
-                return temp.getDestination();
+        if(currentRoute == null || currentRoute.isEmpty()){
+            return null;
+        }
+
+        //refind the index(swapping routes might have this issue)
+        if(!currentRoute.get(routeIndex).equals(currentPos)){
+            for(int i = 0; i < currentRoute.size(); i++){
+                if(currentRoute.get(i).equals(currentPos)){
+                    routeIndex = i;
+                    break;
+                }
             }
-            temp = temp.getParentPath();
+        }
+
+        if(routeIndex + 1 < currentRoute.size()){
+            routeIndex += 1;
+            return currentRoute.get(routeIndex);
         }
         return null;
+    }
+
+    public List<Vertex> pathToList(Path p){
+        List<Vertex> route = new ArrayList<>();
+        while(p != null){
+            route.add(0, p.getDestination());
+            p = p.getParentPath();
+        }
+        return route;
     }
 
     /////////////////////////////////// AStarAgent methods to override ///////////////////////////////////
