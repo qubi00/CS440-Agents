@@ -52,7 +52,8 @@ public class StealthAgent
     private float riskWeight;
     private float dangerCap;
 
-    private float unitRange = 5f;
+    private float unitRange;
+    private int numEnemies = 0;
     
 
     public StealthAgent(int playerNum)
@@ -85,6 +86,8 @@ public class StealthAgent
         while(otherEnemyUnitIDsIt.hasNext() && otherEnemyUnitView == null)
         {
             otherEnemyUnitView = state.getUnit(otherEnemyUnitIDsIt.next());
+            numEnemies += 1;
+
         }
 
         if(otherEnemyUnitView == null)
@@ -106,16 +109,43 @@ public class StealthAgent
         float y = state.getYExtent();
         float scale = (x+y)/2f;
 
-        riskMultiplier = scale * 22;
-        riskWeight = scale * 42f;
+        riskMultiplier = scale * 24f;
+        riskWeight = scale * 50f;
         dangerCap = scale * 32f;
 
-        System.out.println(riskMultiplier);
-        System.out.println(riskWeight);
-        System.out.println(dangerCap);
+        unitRange = 4f + numEnemies;
 
 
-        return null;
+        Vertex currentPos = new Vertex(myUnit.getXPosition(), myUnit.getYPosition());
+        Vertex goal = null;
+        if(phase == AgentPhase.INFILTRATE) {
+            UnitView enemyBase = state.getUnit(getEnemyBaseUnitID());
+            if(enemyBase != null) {
+                goal = new Vertex(enemyBase.getXPosition(), enemyBase.getYPosition());
+            } else {
+                phase = AgentPhase.EXFILTRATE;
+            }
+        }
+        if(phase == AgentPhase.EXFILTRATE) {
+            goal = startingPos;
+        }
+        
+        if(goal != null) {
+            currentPath = aStarSearch(currentPos, goal, state, null);
+            routeIndex = 0;
+            currentRoute = pathToList(currentPath);
+        }
+        
+        Map<Integer, Action> actions = new HashMap<>();
+        if(currentPath != null && !currentPos.equals(currentPath.getDestination())) {
+            Vertex nextStep = nextMove(currentPos);
+            if(nextStep != null) {
+                Direction nextDir = getDirectionToMoveTo(currentPos, nextStep);
+                actions.put(getMyUnitID(), Action.createPrimitiveMove(getMyUnitID(), nextDir));
+            }
+        }
+
+        return actions;
     }
 
 
@@ -150,6 +180,7 @@ public class StealthAgent
                 currentPath = aStarSearch(currentPos, goal, state, null);
                 routeIndex = 0;
                 currentRoute = pathToList(currentPath);
+                System.out.println(currentRoute);
             }
         }
 
@@ -294,14 +325,29 @@ public class StealthAgent
     public float heuristic(Vertex src, Vertex dst, StateView state){
         int goalDist = calculateDistance(src, dst);
         float enemyRisk = 0f;
+
+        int closeEnemyNum = 0;
+        for (Integer enemyId : getOtherEnemyUnitIDs()) {
+            UnitView enemy = state.getUnit(enemyId);
+            if(enemy == null){
+                continue;
+            }
+            Vertex enemyPos = new Vertex(enemy.getXPosition(), enemy.getYPosition());
+            if(calculateDistance(src, enemyPos) <= unitRange){
+                closeEnemyNum++;
+            }
+            
+        }
+
+        float closeEnemyrisk = riskMultiplier * (1 + closeEnemyNum);
         
         for (Integer enemyId : getOtherEnemyUnitIDs()) {
             UnitView enemy = state.getUnit(enemyId);
             Vertex enemyPos = new Vertex(enemy.getXPosition(), enemy.getYPosition());
             int enemyDist = calculateDistance(src, enemyPos);
-            enemyRisk += (1f / enemyDist);
+            enemyRisk += (1f / (enemyDist + 1));
         }
-        return (goalDist + riskMultiplier * enemyRisk);
+        return (goalDist + closeEnemyrisk * enemyRisk);
 
     }
 
@@ -371,7 +417,7 @@ public class StealthAgent
                 continue;
             }
 
-            totalRisk += riskWeight/(float)distanceCalc;
+            totalRisk += riskWeight/(float)Math.pow(distanceCalc + 1,2);
         }
         return totalRisk;
     }
@@ -386,7 +432,14 @@ public class StealthAgent
         float base = 1f;
         float riskCost = calculateRisk(dst, state);
         int goalDist = calculateDistance(src, dst);
-        return base + riskCost + (.5f * goalDist);
+
+        //additional penalty if unit is too close
+        float dangerPenalty = 0f;
+        if(riskCost > dangerCap * .75f){
+            dangerPenalty = 100f;
+        }
+
+        return base + riskCost + (.5f * goalDist) + dangerPenalty;
 
     }
 
