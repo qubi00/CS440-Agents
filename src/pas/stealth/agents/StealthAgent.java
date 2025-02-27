@@ -224,6 +224,10 @@ public class StealthAgent
     }
 
     public boolean isPathSafe(Path p, StateView state){
+        if(currentPath == null){
+            return false;
+        }
+
         Path temp = p;
         while(temp != null){
             if(calculateRisk(temp.getDestination(), state) > dangerCap){
@@ -355,6 +359,10 @@ public class StealthAgent
         float totalRisk = 0f;
         for(Integer enemyId: getOtherEnemyUnitIDs()){
             UnitView enemy = state.getUnit(enemyId);
+            //enemy probably dying
+            if(enemy == null){
+                continue;
+            }
             Vertex enemyPos = new Vertex(enemy.getXPosition(), enemy.getYPosition());
 
             //enemies too far dont matter
@@ -385,9 +393,6 @@ public class StealthAgent
     public boolean shouldReplacePlan(StateView state,
                                      ExtraParams extraParams)
     {
-        int unitId = this.getMyUnitID();
-        UnitView myUnit = state.getUnit(unitId);
-        Vertex currentPos = new Vertex(myUnit.getXPosition(), myUnit.getYPosition());
         Vertex goal = null;
 
         if(phase == AgentPhase.INFILTRATE){
@@ -401,8 +406,10 @@ public class StealthAgent
             goal = startingPos;
         }
 
-        if(this.currentPath == null || currentPos.equals(currentPath.getDestination())
-        || !currentPath.getDestination().equals(goal) || !isPathSafe(currentPath, state)){
+        //only recompute when no path, reached destination, or not safe
+        //previously were recomputing after reaching the last step of route
+        if(this.currentPath == null || !currentPath.getDestination().equals(goal) 
+        || !isPathSafe(currentPath, state)){
             return true;
         }else{
             return false;
