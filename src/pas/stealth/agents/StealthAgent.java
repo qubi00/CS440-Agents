@@ -317,7 +317,7 @@ public class StealthAgent
 
         float enemyRisk = 0f;
 
-        float penaltyFactor = 200000f;
+        float penaltyFactor = 100000f;
         for (Integer enemyId : getOtherEnemyUnitIDs()) {
             UnitView enemy = state.getUnit(enemyId);
             if(enemy == null){
@@ -325,10 +325,10 @@ public class StealthAgent
             }
             Vertex enemyPos = new Vertex(enemy.getXPosition(), enemy.getYPosition());
             float enemyDist = calculateDistance(src, enemyPos);
-            if(enemyDist <= enemyChebyshevSightLimit + 2){
+            if(enemyDist <= enemyChebyshevSightLimit + 3){
                 //closer to enemy = smaller dist, closer to 1
                 //further from enemy = larger dist, closer to 0
-                enemyRisk += penaltyFactor * ((enemyChebyshevSightLimit + 2 - enemyDist)/enemyChebyshevSightLimit + 2);
+                enemyRisk += penaltyFactor * ((enemyChebyshevSightLimit + 3 - enemyDist)/enemyChebyshevSightLimit + 3);
             }
             
         }
@@ -345,14 +345,20 @@ public class StealthAgent
                             Vertex dst,
                             StateView state,
                             ExtraParams extraParams)
-    {
-        PriorityQueue<Path> openList = new PriorityQueue<>(Comparator.comparingDouble(path -> path.getTrueCost()  + heuristic(path.getDestination(), dst, state)));
-        Set<Vertex> closedList = new HashSet<>();
+    {   
+        
         Map<Vertex, Float> currentCost = new HashMap<>();
+        Map<Vertex, Float> estimatedCost = new HashMap<>();
+
+
+        PriorityQueue<Path> openList = new PriorityQueue<>(Comparator.comparingDouble(p -> estimatedCost.get(p.getDestination())));
+        Set<Vertex> closedList = new HashSet<>();
+        
 
         Path start = new Path(src, 0f, null);
         openList.add(start);
         currentCost.put(src, 0f);
+        estimatedCost.put(src, heuristic(src, dst, state));
 
         while(!openList.isEmpty()){
             Path currentPath = openList.poll();
@@ -369,9 +375,15 @@ public class StealthAgent
                     continue;
                 }
                 float cost = getEdgeWeight(current, neighbor, state, extraParams);
-                float newTotalCost = currentPath.getTrueCost() + cost;
+                if(cost == Float.MAX_VALUE){
+                    continue;
+                }
+                float newTotalCost = currentCost.get(current) + cost;
                 if(!currentCost.containsKey(neighbor) || newTotalCost < currentCost.get(neighbor)){
                     currentCost.put(neighbor, newTotalCost);
+                    float estimatedDst = newTotalCost + heuristic(neighbor, dst, state);
+                    estimatedCost.put(neighbor, estimatedDst);
+
                     Path newPath = new Path(neighbor, newTotalCost, currentPath);
                     openList.add(newPath);
                 }
@@ -379,7 +391,7 @@ public class StealthAgent
             }
         }
 
-        return currentPath;
+        return null;
     }
 
     public static int calculateDistance(Vertex agent, Vertex enemy) {
