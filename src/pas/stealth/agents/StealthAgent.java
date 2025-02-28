@@ -123,6 +123,7 @@ public class StealthAgent
                 actions.put(getMyUnitID(), Action.createPrimitiveMove(getMyUnitID(), nextDir));
             }
         }
+        System.out.println(enemyChebyshevSightLimit);
 
         return actions;
     }
@@ -159,8 +160,6 @@ public class StealthAgent
                 currentPath = aStarSearch(currentPos, goal, state, null);
                 routeIndex = 0;
                 currentRoute = pathToList(currentPath);
-                System.out.println(goal);
-                System.out.println(currentRoute);
             }
         }
 
@@ -297,7 +296,7 @@ public class StealthAgent
             }
             neighbor = new Vertex(x, y);
 
-            //not valid move or too in enemy range
+            //not in bound
             if(!isValidMove(neighbor, state)){
                 continue;
             }            
@@ -318,7 +317,7 @@ public class StealthAgent
 
         float enemyRisk = 0f;
 
-        float penaltyFactor = 10000f;
+        float penaltyFactor = 200000f;
         for (Integer enemyId : getOtherEnemyUnitIDs()) {
             UnitView enemy = state.getUnit(enemyId);
             if(enemy == null){
@@ -326,7 +325,11 @@ public class StealthAgent
             }
             Vertex enemyPos = new Vertex(enemy.getXPosition(), enemy.getYPosition());
             float enemyDist = calculateDistance(src, enemyPos);
-            enemyRisk += penaltyFactor/(enemyDist + 1);
+            if(enemyDist <= enemyChebyshevSightLimit + 2){
+                //closer to enemy = smaller dist, closer to 1
+                //further from enemy = larger dist, closer to 0
+                enemyRisk += penaltyFactor * ((enemyChebyshevSightLimit + 2 - enemyDist)/enemyChebyshevSightLimit + 2);
+            }
             
         }
         
@@ -389,15 +392,15 @@ public class StealthAgent
                                ExtraParams extraParams)
     {
         float base = 1f;
-        float dangerPenalty = 100f;
 
         for (Integer enemyId : getOtherEnemyUnitIDs()) {
             UnitView enemy = state.getUnit(enemyId);
             if (enemy != null) {
                 Vertex enemyPos = new Vertex(enemy.getXPosition(), enemy.getYPosition());
                 int dist = calculateDistance(dst, enemyPos); 
-                if (dist <= 3) {
-                    base += dangerPenalty;
+                if (dist <= this.getEnemyChebyshevSightLimit()) {
+                    //if a neighbor is in immediate danger range, disqualify neighbor/path
+                    return Float.MAX_VALUE;
                 }
             }
         }
