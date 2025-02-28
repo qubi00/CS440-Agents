@@ -6,6 +6,8 @@ import edu.cwru.sepia.action.Action;
 import edu.cwru.sepia.environment.model.history.History.HistoryView;
 import edu.cwru.sepia.environment.model.state.State.StateView;
 import edu.cwru.sepia.environment.model.state.Unit.UnitView;
+import edu.cwru.sepia.environment.model.state.ResourceNode;
+import edu.cwru.sepia.environment.model.state.ResourceNode.ResourceView;
 import edu.cwru.sepia.util.Direction;
 
 
@@ -44,6 +46,11 @@ public class StealthAgent
     private Vertex startingPos;
     private List<Vertex> currentRoute;
     private int routeIndex;
+    private int numEnemies = 0;
+
+    private Vertex goldUnitPos = null;
+    private int goldId;
+    private boolean obtainedGold;
 
     
 
@@ -72,11 +79,18 @@ public class StealthAgent
         // let's calculate how far away enemy units can see us...this will be the same for all units (except the base)
         // which doesn't have a sight limit (nor does it care about seeing you)
         // iterate over the "other" (i.e. not the base) enemy units until we get a UnitView that is not null
+        List<Integer> goldResourceNodeId = state.getResourceNodeIds(ResourceNode.Type.GOLD_MINE);
+        this.goldId = goldResourceNodeId.iterator().next();
+        ResourceView goldUnit = state.getResourceNode(this.goldId);
+        goldUnitPos = new Vertex(goldUnit.getXPosition(), goldUnit.getYPosition());
+        this.obtainedGold = false;
+
         UnitView otherEnemyUnitView = null;
         Iterator<Integer> otherEnemyUnitIDsIt = this.getOtherEnemyUnitIDs().iterator();
         while(otherEnemyUnitIDsIt.hasNext() && otherEnemyUnitView == null)
         {
             otherEnemyUnitView = state.getUnit(otherEnemyUnitIDsIt.next());
+            numEnemies++;
 
         }
 
@@ -98,17 +112,20 @@ public class StealthAgent
         Vertex currentPos = new Vertex(myUnit.getXPosition(), myUnit.getYPosition());
         Vertex goal = null;
         if(phase == AgentPhase.INFILTRATE) {
-            UnitView enemyBase = state.getUnit(getEnemyBaseUnitID());
-            if(enemyBase != null) {
-                goal = new Vertex(enemyBase.getXPosition(), enemyBase.getYPosition());
+            if(!this.obtainedGold) {
+                goal = goldUnitPos;
             } else {
-                phase = AgentPhase.EXFILTRATE;
+                UnitView enemyBase = state.getUnit(getEnemyBaseUnitID());
+                if(enemyBase != null) {
+                    goal = new Vertex(enemyBase.getXPosition(), enemyBase.getYPosition());
+                } else {
+                    phase = AgentPhase.EXFILTRATE;
+                }
             }
         }
         if(phase == AgentPhase.EXFILTRATE) {
             goal = startingPos;
         }
-        
         if(goal != null) {
             currentPath = aStarSearch(currentPos, goal, state, null);
             routeIndex = 0;
@@ -123,7 +140,6 @@ public class StealthAgent
                 actions.put(getMyUnitID(), Action.createPrimitiveMove(getMyUnitID(), nextDir));
             }
         }
-        System.out.println(enemyChebyshevSightLimit);
 
         return actions;
     }
@@ -138,10 +154,28 @@ public class StealthAgent
         int unitId = this.getMyUnitID();
         Vertex currentPos = new Vertex(state.getUnit(unitId).getXPosition(), state.getUnit(unitId).getYPosition());
         Vertex townhall = null;
+        Vertex goldPos = null;
+
+        //gold block
+        List<Integer> goldResourceNodeId = state.getResourceNodeIds(ResourceNode.Type.GOLD_MINE);
+        if(goldResourceNodeId == null || goldResourceNodeId.isEmpty()){
+            this.obtainedGold = true;
+        } else {
+            this.goldId = goldResourceNodeId.iterator().next();
+            ResourceView goldUnit = state.getResourceNode(this.goldId);
+            if(goldUnit == null){
+                this.obtainedGold = true;
+            }else{
+                this.obtainedGold = false;
+            }
+        }
+        
 
         if(phase == AgentPhase.INFILTRATE){
             UnitView enemyBase = state.getUnit(getEnemyBaseUnitID());
-            if(enemyBase != null){
+            if(this.obtainedGold == false){
+                goldPos = this.goldUnitPos;
+            }else if(enemyBase != null){
                 townhall = new Vertex(enemyBase.getXPosition(),enemyBase.getYPosition());
             }else{
                 phase = AgentPhase.EXFILTRATE;
@@ -151,7 +185,11 @@ public class StealthAgent
         Vertex goal = null;
         if(this.shouldReplacePlan(state, null)){
             if(phase == AgentPhase.INFILTRATE){
-                goal = townhall;
+                if(this.obtainedGold == false){
+                    goal = goldPos;
+                }else{
+                    goal = townhall;
+                }
             }else if(phase == AgentPhase.EXFILTRATE){
                 goal = startingPos;
             }
@@ -164,7 +202,13 @@ public class StealthAgent
         }
 
         //attack townhall if it exists, we are in infiltrate mode, and the townhall is right next to us
-        if(phase == AgentPhase.INFILTRATE && townhall != null && isAdjacent(currentPos, townhall)){
+        if(phase == AgentPhase.INFILTRATE && this.obtainedGold == false && isAdjacent(currentPos, goldPos)){
+            if(goldId != -1){
+                Direction collect = getDirectionToMoveTo(currentPos, goldPos);
+                actions.put(unitId, Action.createPrimitiveGather(unitId, collect));
+            }
+            return actions;
+        }else if(phase == AgentPhase.INFILTRATE && townhall != null && isAdjacent(currentPos, townhall)){
             int townhallId = getEnemyBaseUnitID();
             if(townhallId != -1){
                 actions.put(unitId, Action.createPrimitiveAttack(unitId, townhallId));
@@ -269,6 +313,16 @@ public class StealthAgent
             townhallPos = new Vertex(enemyBase.getXPosition(), enemyBase.getYPosition());
         }
 
+        List<Integer> goldResourceNodeIds = state.getResourceNodeIds(ResourceNode.Type.GOLD_MINE);
+        Vertex goldUnitPos = null;
+        if(goldResourceNodeIds != null && !goldResourceNodeIds.isEmpty()){
+            int goldResourceId = goldResourceNodeIds.get(0);
+            ResourceView goldRes = state.getResourceNode(goldResourceId);
+            if(goldRes != null){
+                goldUnitPos = new Vertex(goldRes.getXPosition(), goldRes.getYPosition());
+            }
+        }
+
         Collection<Vertex> neighbors = new ArrayList<>();
         Vertex neighbor = null;
 
@@ -302,7 +356,8 @@ public class StealthAgent
             }            
 
             //found the townhall or if no resources, then it's a valid neighbor
-            if((townhallPos != null && neighbor.equals(townhallPos)) ||
+            if((townhallPos != null && neighbor.equals(townhallPos)) || 
+            (goldUnitPos != null && neighbor.equals(goldUnitPos)) ||
             !state.isResourceAt(neighbor.getXCoordinate(), neighbor.getYCoordinate())){
                 neighbors.add(neighbor);
             }
@@ -317,7 +372,7 @@ public class StealthAgent
 
         float enemyRisk = 0f;
 
-        float penaltyFactor = 100000f;
+        float penaltyFactor = 10000f;
         for (Integer enemyId : getOtherEnemyUnitIDs()) {
             UnitView enemy = state.getUnit(enemyId);
             if(enemy == null){
@@ -326,14 +381,36 @@ public class StealthAgent
             Vertex enemyPos = new Vertex(enemy.getXPosition(), enemy.getYPosition());
             float enemyDist = calculateDistance(src, enemyPos);
             if(enemyDist <= enemyChebyshevSightLimit + 3){
-                //closer to enemy = smaller dist, closer to 1
-                //further from enemy = larger dist, closer to 0
-                enemyRisk += penaltyFactor * ((enemyChebyshevSightLimit + 3 - enemyDist)/enemyChebyshevSightLimit + 3);
+                //further = less penalty
+                enemyRisk += penaltyFactor/(enemyDist + 1);
             }
             
         }
         
         return (heuristicCost + enemyRisk);
+    }
+
+    public float getEdgeWeight(Vertex src,
+                               Vertex dst,
+                               StateView state,
+                               ExtraParams extraParams)
+    {
+        float base = 1f;
+
+        for (Integer enemyId : getOtherEnemyUnitIDs()) {
+            UnitView enemy = state.getUnit(enemyId);
+            if (enemy != null) {
+                Vertex enemyPos = new Vertex(enemy.getXPosition(), enemy.getYPosition());
+                int dist = calculateDistance(dst, enemyPos); 
+                if(dist <= this.getEnemyChebyshevSightLimit()){
+                    //if a neighbor is in immediate danger range, disqualify neighbor/path
+                    return Float.MAX_VALUE;
+                }else if(dist <= this.getEnemyChebyshevSightLimit() + 2){
+                    base += 100f;
+                }
+            }
+        }
+        return base;
     }
 
     public boolean isAdjacent(Vertex v1, Vertex v2) {
@@ -398,35 +475,16 @@ public class StealthAgent
         return Math.max(Math.abs(agent.getXCoordinate() - enemy.getXCoordinate()), Math.abs(agent.getYCoordinate() - enemy.getYCoordinate()));
     }
 
-    public float getEdgeWeight(Vertex src,
-                               Vertex dst,
-                               StateView state,
-                               ExtraParams extraParams)
-    {
-        float base = 1f;
-
-        for (Integer enemyId : getOtherEnemyUnitIDs()) {
-            UnitView enemy = state.getUnit(enemyId);
-            if (enemy != null) {
-                Vertex enemyPos = new Vertex(enemy.getXPosition(), enemy.getYPosition());
-                int dist = calculateDistance(dst, enemyPos); 
-                if (dist <= this.getEnemyChebyshevSightLimit()) {
-                    //if a neighbor is in immediate danger range, disqualify neighbor/path
-                    return Float.MAX_VALUE;
-                }
-            }
-        }
-        return base;
-    }
 
     public boolean shouldReplacePlan(StateView state,
                                      ExtraParams extraParams)
     {
         Vertex goal = null;
-
         if(phase == AgentPhase.INFILTRATE){
             UnitView enemyBase = state.getUnit(getEnemyBaseUnitID());
-            if(enemyBase != null){
+            if(this.obtainedGold == false){
+                goal = goldUnitPos;
+            }else if(enemyBase != null){
                 goal = new Vertex(enemyBase.getXPosition(), enemyBase.getYPosition());
             }else{
                 goal = startingPos;
