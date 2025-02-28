@@ -45,15 +45,6 @@ public class StealthAgent
     private List<Vertex> currentRoute;
     private int routeIndex;
 
-    //for path risk calc
-    private float riskMultiplier;
-    //risk weight should be a little higher than the cap, so if it's adjacent
-    //then it will avoid the path
-    private float riskWeight;
-    private float dangerCap;
-
-    private float unitRange;
-    private int numEnemies = 0;
     
 
     public StealthAgent(int playerNum)
@@ -86,7 +77,6 @@ public class StealthAgent
         while(otherEnemyUnitIDsIt.hasNext() && otherEnemyUnitView == null)
         {
             otherEnemyUnitView = state.getUnit(otherEnemyUnitIDsIt.next());
-            numEnemies += 1;
 
         }
 
@@ -103,17 +93,6 @@ public class StealthAgent
 
         UnitView myUnit = state.getUnit(this.getMyUnitID());
         this.startingPos = new Vertex(myUnit.getXPosition(), myUnit.getYPosition());
-
-        //calculate the risk and danger cap ratio
-        float x = state.getXExtent();
-        float y = state.getYExtent();
-        float scale = (x+y)/2f;
-
-        riskMultiplier = scale * 24f;
-        riskWeight = scale * 50f;
-        dangerCap = scale * 32f;
-
-        unitRange = 4f + numEnemies;
 
 
         Vertex currentPos = new Vertex(myUnit.getXPosition(), myUnit.getYPosition());
@@ -180,6 +159,7 @@ public class StealthAgent
                 currentPath = aStarSearch(currentPos, goal, state, null);
                 routeIndex = 0;
                 currentRoute = pathToList(currentPath);
+                System.out.println(goal);
                 System.out.println(currentRoute);
             }
         }
@@ -254,18 +234,29 @@ public class StealthAgent
         v.getXCoordinate() < state.getXExtent() && v.getYCoordinate() < state.getYExtent());
     }
 
-    public boolean isPathSafe(Path p, StateView state){
-        if(currentPath == null){
+    public boolean isPathSafe(Path p, StateView state) {
+        if (p == null) {
             return false;
         }
-
-        Path temp = p;
-        while(temp != null){
-            if(calculateRisk(temp.getDestination(), state) > dangerCap){
-                return false;
+    
+        for (Integer enemyId : getOtherEnemyUnitIDs()) {
+            UnitView enemy = state.getUnit(enemyId);
+            if (enemy == null) {
+                continue;
             }
-            temp = temp.getParentPath();
+            Vertex enemyPos = new Vertex(enemy.getXPosition(), enemy.getYPosition());
+    
+            Path temp = p;
+            while (temp != null) {
+                Vertex stepPos = temp.getDestination();
+                float distance = calculateDistance(stepPos, enemyPos);
+                if (distance <= 3) {
+                    return false;
+                }
+                temp = temp.getParentPath();
+            }
         }
+        
         return true;
     }
 
@@ -306,9 +297,9 @@ public class StealthAgent
             }
             neighbor = new Vertex(x, y);
 
-            //not valid move or too dangerous
-            if(!isValidMove(neighbor, state) || calculateRisk(neighbor, state) > dangerCap){
-                    continue;
+            //not valid move or too in enemy range
+            if(!isValidMove(neighbor, state)){
+                continue;
             }            
 
             //found the townhall or if no resources, then it's a valid neighbor
@@ -323,32 +314,23 @@ public class StealthAgent
 
 
     public float heuristic(Vertex src, Vertex dst, StateView state){
-        int goalDist = calculateDistance(src, dst);
+        float heuristicCost = calculateDistance(src, dst);
+
         float enemyRisk = 0f;
 
-        int closeEnemyNum = 0;
+        float penaltyFactor = 10000f;
         for (Integer enemyId : getOtherEnemyUnitIDs()) {
             UnitView enemy = state.getUnit(enemyId);
             if(enemy == null){
                 continue;
             }
             Vertex enemyPos = new Vertex(enemy.getXPosition(), enemy.getYPosition());
-            if(calculateDistance(src, enemyPos) <= unitRange){
-                closeEnemyNum++;
-            }
+            float enemyDist = calculateDistance(src, enemyPos);
+            enemyRisk += penaltyFactor/(enemyDist + 1);
             
         }
-
-        float closeEnemyrisk = riskMultiplier * (1 + closeEnemyNum);
         
-        for (Integer enemyId : getOtherEnemyUnitIDs()) {
-            UnitView enemy = state.getUnit(enemyId);
-            Vertex enemyPos = new Vertex(enemy.getXPosition(), enemy.getYPosition());
-            int enemyDist = calculateDistance(src, enemyPos);
-            enemyRisk += (1f / (enemyDist + 1));
-        }
-        return (goalDist + closeEnemyrisk * enemyRisk);
-
+        return (heuristicCost + enemyRisk);
     }
 
     public boolean isAdjacent(Vertex v1, Vertex v2) {
@@ -361,7 +343,7 @@ public class StealthAgent
                             StateView state,
                             ExtraParams extraParams)
     {
-        PriorityQueue<Path> openList = new PriorityQueue<>(Comparator.comparingDouble(path -> path.getTrueCost()  + getHeuristicValue(path.getDestination(), dst, state)));
+        PriorityQueue<Path> openList = new PriorityQueue<>(Comparator.comparingDouble(path -> path.getTrueCost()  + heuristic(path.getDestination(), dst, state)));
         Set<Vertex> closedList = new HashSet<>();
         Map<Vertex, Float> currentCost = new HashMap<>();
 
@@ -401,46 +383,25 @@ public class StealthAgent
         return Math.max(Math.abs(agent.getXCoordinate() - enemy.getXCoordinate()), Math.abs(agent.getYCoordinate() - enemy.getYCoordinate()));
     }
 
-    public float calculateRisk(Vertex v, StateView state){
-        float totalRisk = 0f;
-        for(Integer enemyId: getOtherEnemyUnitIDs()){
-            UnitView enemy = state.getUnit(enemyId);
-            //enemy probably dying
-            if(enemy == null){
-                continue;
-            }
-            Vertex enemyPos = new Vertex(enemy.getXPosition(), enemy.getYPosition());
-
-            //enemies too far dont matter
-            int distanceCalc = calculateDistance(v, enemyPos);
-            if(distanceCalc > unitRange){
-                continue;
-            }
-
-            totalRisk += riskWeight/(float)Math.pow(distanceCalc + 1,2);
-        }
-        return totalRisk;
-    }
-
     public float getEdgeWeight(Vertex src,
                                Vertex dst,
                                StateView state,
                                ExtraParams extraParams)
     {
-        //path closer to enemy = higher weight
-        //path further = lower weight.
         float base = 1f;
-        float riskCost = calculateRisk(dst, state);
-        int goalDist = calculateDistance(src, dst);
+        float dangerPenalty = 100f;
 
-        //additional penalty if unit is too close
-        float dangerPenalty = 0f;
-        if(riskCost > dangerCap * .75f){
-            dangerPenalty = 100f;
+        for (Integer enemyId : getOtherEnemyUnitIDs()) {
+            UnitView enemy = state.getUnit(enemyId);
+            if (enemy != null) {
+                Vertex enemyPos = new Vertex(enemy.getXPosition(), enemy.getYPosition());
+                int dist = calculateDistance(dst, enemyPos); 
+                if (dist <= 3) {
+                    base += dangerPenalty;
+                }
+            }
         }
-
-        return base + riskCost + (.5f * goalDist) + dangerPenalty;
-
+        return base;
     }
 
     public boolean shouldReplacePlan(StateView state,
