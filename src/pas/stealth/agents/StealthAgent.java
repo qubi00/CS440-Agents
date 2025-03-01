@@ -51,6 +51,7 @@ public class StealthAgent
     private Vertex goldUnitPos = null;
     private int goldId;
     private boolean obtainedGold;
+    private int stepDepth;
 
     
 
@@ -84,6 +85,8 @@ public class StealthAgent
         ResourceView goldUnit = state.getResourceNode(this.goldId);
         goldUnitPos = new Vertex(goldUnit.getXPosition(), goldUnit.getYPosition());
         this.obtainedGold = false;
+
+        stepDepth = 0;
 
         UnitView otherEnemyUnitView = null;
         Iterator<Integer> otherEnemyUnitIDsIt = this.getOtherEnemyUnitIDs().iterator();
@@ -138,6 +141,7 @@ public class StealthAgent
             if(nextStep != null) {
                 Direction nextDir = getDirectionToMoveTo(currentPos, nextStep);
                 actions.put(getMyUnitID(), Action.createPrimitiveMove(getMyUnitID(), nextDir));
+                stepDepth ++;
             }
         }
 
@@ -183,7 +187,7 @@ public class StealthAgent
         }
 
         Vertex goal = null;
-        if(this.shouldReplacePlan(state, null)){
+        if(this.shouldReplacePlan(state, null) || (stepDepth == 3)){
             if(phase == AgentPhase.INFILTRATE){
                 if(this.obtainedGold == false){
                     goal = goldPos;
@@ -196,10 +200,24 @@ public class StealthAgent
             if(goal != null){
                 //currentPath should return a path assuming enemies are obstacles if within danger zone
                 currentPath = aStarSearch(currentPos, goal, state, null);
+                if(!isPathSafe(currentPath, state) && predict(currentPos, state)){
+                    Vertex retreat = null;
+                    float val = Float.MAX_VALUE;
+                    for(Vertex neighbor : getNeighbors(currentPos, state, null)){
+                        float traverseCost = getEdgeWeight(currentPos, neighbor, state, null);
+                        if(traverseCost < val){
+                            val = traverseCost;
+                            retreat = neighbor;
+                        }
+                    }
+                    currentPath = aStarSearch(currentPos, retreat, state, null);
+                }
                 routeIndex = 0;
                 currentRoute = pathToList(currentPath);
+                stepDepth = 0;
             }
         }
+        System.out.println(currentRoute);
 
         //attack townhall if it exists, we are in infiltrate mode, and the townhall is right next to us
         if(phase == AgentPhase.INFILTRATE && this.obtainedGold == false && isAdjacent(currentPos, goldPos)){
@@ -238,6 +256,21 @@ public class StealthAgent
     }
 
     ////////////////////////////////// End of Sepia methods to override //////////////////////////////////
+
+    public boolean predict(Vertex currentPos, StateView state){
+        for (Integer enemyId : getOtherEnemyUnitIDs()) {
+            UnitView enemy = state.getUnit(enemyId);
+            if (enemy == null) {
+                continue;
+            }
+            Vertex enemyPos = new Vertex(enemy.getXPosition(), enemy.getYPosition());
+            float distance = calculateDistance(currentPos, enemyPos);
+            if((distance + 1) <= 3){
+                return true;
+            }
+        }
+        return false;
+    }
     
     public Vertex nextMove(Vertex currentPos){
         if(currentRoute == null || currentRoute.isEmpty()){
@@ -370,9 +403,9 @@ public class StealthAgent
     public float heuristic(Vertex src, Vertex dst, StateView state){
         float heuristicCost = calculateDistance(src, dst);
 
+        int riskZone = enemyChebyshevSightLimit + 2;
         float enemyRisk = 0f;
 
-        float penaltyFactor = 10000f;
         for (Integer enemyId : getOtherEnemyUnitIDs()) {
             UnitView enemy = state.getUnit(enemyId);
             if(enemy == null){
@@ -380,9 +413,9 @@ public class StealthAgent
             }
             Vertex enemyPos = new Vertex(enemy.getXPosition(), enemy.getYPosition());
             float enemyDist = calculateDistance(src, enemyPos);
-            if(enemyDist <= enemyChebyshevSightLimit + 3){
+            if(enemyDist <= riskZone){
                 //further = less penalty
-                enemyRisk += penaltyFactor/(enemyDist + 1);
+                enemyRisk += (riskZone - enemyDist) * 50f;
             }
             
         }
@@ -391,26 +424,23 @@ public class StealthAgent
     }
 
     public float getEdgeWeight(Vertex src,
-                               Vertex dst,
-                               StateView state,
-                               ExtraParams extraParams)
-    {
-        float base = 1f;
-
+                           Vertex dst,
+                           StateView state,
+                           ExtraParams extraParams)
+    {   
+        float dangerWeight = 0f;
         for (Integer enemyId : getOtherEnemyUnitIDs()) {
             UnitView enemy = state.getUnit(enemyId);
             if (enemy != null) {
                 Vertex enemyPos = new Vertex(enemy.getXPosition(), enemy.getYPosition());
-                int dist = calculateDistance(dst, enemyPos); 
-                if(dist <= this.getEnemyChebyshevSightLimit()){
-                    //if a neighbor is in immediate danger range, disqualify neighbor/path
-                    return Float.MAX_VALUE;
-                }else if(dist <= this.getEnemyChebyshevSightLimit() + 2){
-                    base += 100f;
+                int distSrc = calculateDistance(src, enemyPos);
+                int distDst = calculateDistance(dst, enemyPos);
+                if (distDst < distSrc) {
+                    dangerWeight += 100f/distDst;
                 }
             }
         }
-        return base;
+        return dangerWeight/numEnemies;
     }
 
     public boolean isAdjacent(Vertex v1, Vertex v2) {
