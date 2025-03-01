@@ -203,10 +203,21 @@ public class StealthAgent
                 if(!isPathSafe(currentPath, state) && predict(currentPos, state)){
                     Vertex retreat = null;
                     float val = Float.MAX_VALUE;
+                    float totalDist = 0;
                     for(Vertex neighbor : getNeighbors(currentPos, state, null)){
-                        float traverseCost = getEdgeWeight(currentPos, neighbor, state, null);
-                        if(traverseCost < val){
-                            val = traverseCost;
+                        for (Integer enemyId : getOtherEnemyUnitIDs()) {
+                            UnitView enemy = state.getUnit(enemyId);
+                            if (enemy == null) {
+                                continue;
+                            }
+                            Vertex enemyPos = new Vertex(enemy.getXPosition(), enemy.getYPosition());
+                            float distance = calculateDistance(currentPos, enemyPos);
+                            if(distance <= 5){
+                                totalDist += distance;
+                            }
+                        }
+                        if(totalDist < val){
+                            val = totalDist;
                             retreat = neighbor;
                         }
                     }
@@ -217,7 +228,6 @@ public class StealthAgent
                 stepDepth = 0;
             }
         }
-        System.out.println(currentRoute);
 
         //attack townhall if it exists, we are in infiltrate mode, and the townhall is right next to us
         if(phase == AgentPhase.INFILTRATE && this.obtainedGold == false && isAdjacent(currentPos, goldPos)){
@@ -428,7 +438,8 @@ public class StealthAgent
                            StateView state,
                            ExtraParams extraParams)
     {   
-        float dangerWeight = 0f;
+        float dangerWeight = 0.5f;
+        int numEnemiesNear = 0;
         for (Integer enemyId : getOtherEnemyUnitIDs()) {
             UnitView enemy = state.getUnit(enemyId);
             if (enemy != null) {
@@ -436,11 +447,12 @@ public class StealthAgent
                 int distSrc = calculateDistance(src, enemyPos);
                 int distDst = calculateDistance(dst, enemyPos);
                 if (distDst < distSrc) {
-                    dangerWeight += 100f/distDst;
+                    numEnemiesNear++;
+                    dangerWeight += 200f/distDst;
                 }
             }
         }
-        return dangerWeight/numEnemies;
+        return dangerWeight/(numEnemiesNear+1);
     }
 
     public boolean isAdjacent(Vertex v1, Vertex v2) {
