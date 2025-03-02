@@ -187,7 +187,7 @@ public class StealthAgent
         }
 
         Vertex goal = null;
-        if(this.shouldReplacePlan(state, null) || (stepDepth == 3) || true){
+        if(this.shouldReplacePlan(state, null) || predict(currentPos, state)){
             if(phase == AgentPhase.INFILTRATE){
                 if(this.obtainedGold == false){
                     goal = goldPos;
@@ -201,15 +201,17 @@ public class StealthAgent
                 //currentPath should return a path assuming enemies are obstacles if within danger zone
                 currentPath = aStarSearch(currentPos, goal, state, null);
                 if(!isPathSafe(currentPath, state) && predict(currentPos, state)){
+                    System.out.println("retreating");
                     Vertex safeRetreat = findSafeRetreat(currentPos, state);
+                    System.out.println(safeRetreat);
                     currentPath = aStarSearch(currentPos, safeRetreat, state, null);
                 }
                 routeIndex = 0;
                 currentRoute = pathToList(currentPath);
                 stepDepth = 0;
+                System.out.println(currentRoute);
             }
         }
-        System.out.println(currentRoute);
 
         //attack townhall if it exists, we are in infiltrate mode, and the townhall is right next to us
         if(phase == AgentPhase.INFILTRATE && this.obtainedGold == false && isAdjacent(currentPos, goldPos)){
@@ -261,7 +263,7 @@ public class StealthAgent
                 }
                 Vertex enemyPos = new Vertex(enemy.getXPosition(), enemy.getYPosition());
                 float distance = (float)calculateDistance(neighbor, enemyPos);
-                if(distance < minEnemyDist) {
+                if(distance <= 3 && distance < minEnemyDist) {
                     minEnemyDist = distance;
                 }
             }
@@ -280,8 +282,8 @@ public class StealthAgent
                 continue;
             }
             Vertex enemyPos = new Vertex(enemy.getXPosition(), enemy.getYPosition());
-            float distance = (float)calculateEuclid(currentPos, enemyPos);
-            if((distance + 1) <= enemyChebyshevSightLimit + 2){
+            float distance = (float)calculateDistance(currentPos, enemyPos);
+            if((distance - 1) <= enemyChebyshevSightLimit + 2){
                 return true;
             }
         }
@@ -402,16 +404,22 @@ public class StealthAgent
             //not in bound
             if(!isValidMove(neighbor, state)){
                 continue;
-            }            
-
-            //found the townhall or if no resources, then it's a valid neighbor
-            if((townhallPos != null && neighbor.equals(townhallPos)) || 
-            (goldUnitPos != null && neighbor.equals(goldUnitPos)) ||
-            !state.isResourceAt(neighbor.getXCoordinate(), neighbor.getYCoordinate())){
-                neighbors.add(neighbor);
             }
             
+            //no tree, no gold or townhall
+            //havent gotten gold, found gold
+            //gotten gold, found townhall
+            if(!state.isResourceAt(neighbor.getXCoordinate(), neighbor.getYCoordinate()) 
+                && (goldUnitPos == null || !neighbor.equals(goldUnitPos)) 
+                && (townhallPos == null || !neighbor.equals(townhallPos))) {
+            neighbors.add(neighbor);
+            }else if (!this.obtainedGold && goldUnitPos != null && neighbor.equals(goldUnitPos)){
+                neighbors.add(neighbor);
+            }else if (this.obtainedGold && townhallPos != null && neighbor.equals(townhallPos)){
+                neighbors.add(neighbor);
+            }
         }
+
         return neighbors;
     }
 
@@ -419,7 +427,7 @@ public class StealthAgent
     public float heuristic(Vertex src, Vertex dst, StateView state){
         float heuristicCost = calculateDistance(src, dst);
 
-        int riskZone = enemyChebyshevSightLimit + 3;
+        int riskZone = enemyChebyshevSightLimit + 2;
         float enemyRisk = 0f;
 
         for (Integer enemyId : getOtherEnemyUnitIDs()) {
@@ -444,7 +452,7 @@ public class StealthAgent
                            StateView state,
                            ExtraParams extraParams)
     {   
-        float dangerWeight = 0.1f;
+        float dangerWeight = 0f;
         int numEnemiesNear = 0;
         for (Integer enemyId : getOtherEnemyUnitIDs()) {
             UnitView enemy = state.getUnit(enemyId);
