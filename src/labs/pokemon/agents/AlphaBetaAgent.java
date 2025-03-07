@@ -15,6 +15,8 @@ import edu.bu.labs.pokemon.utils.Pair;
 
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -46,6 +48,20 @@ public class AlphaBetaAgent
          */
         public static List<Node> order(List<Node> children)
         {
+            if(children == null || children.isEmpty()){
+                return children;
+            }
+            int childDepth = children.get(0).getDepth();
+            //parent should be first layer for max
+            boolean isMax = ((childDepth -1) %  2) == 0;
+
+            if(isMax){
+                //high to low
+                children.sort(Comparator.comparingDouble(Node::getUtilityValue).reversed());
+            }else{
+                children.sort(Comparator.comparingDouble(Node::getUtilityValue));
+            }
+            
             return children;
         }
 
@@ -94,7 +110,43 @@ public class AlphaBetaAgent
                                     double alpha,
                                     double beta)
 		{
+            if(node.isTerminal() || node.getDepth() >= this.maxDepth){
+                return node;
+            }
+            List<Node> childrens = MoveOrderer.order(node.getChildren());
 			Node bestChild = null;
+            double bestVal;
+            if(node.getDepth() % 2 == 0){
+                bestVal = Double.NEGATIVE_INFINITY;
+                for(Node child : childrens){
+                    Node childRes = normalAlphaBeta(child, alpha, beta);
+                    double childVal = childRes.getUtilityValue();
+                    if(childVal > bestVal){
+                        bestVal = childVal;
+                        bestChild = child;
+                    }
+                    alpha = Math.max(bestVal, alpha);
+                    if(beta <= alpha){
+                        break;
+                    }
+                }
+            }else{
+                bestVal = Double.POSITIVE_INFINITY;
+                for(Node child : childrens){
+                    Node childRes = normalAlphaBeta(child, alpha, beta);
+                    double childVal = childRes.getUtilityValue();
+                    if(childVal < bestVal){
+                        bestVal = childVal;
+                        bestChild = child;
+                    }
+                    beta = Math.min(bestVal,beta);
+                    if(beta <= alpha){
+                        break;
+                    }
+                }
+            }
+            //need to set the value when propagating upward, else will result in different utility move
+            node.setUtilityValue(bestVal);
 			return bestChild;
 		}
 
