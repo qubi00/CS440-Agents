@@ -10,10 +10,15 @@ import edu.bu.pas.pokemon.core.Team.TeamView;
 import edu.bu.pas.pokemon.core.Move;
 import edu.bu.pas.pokemon.core.Move.MoveView;
 import edu.bu.pas.pokemon.utils.Pair;
+import edu.bu.pas.pokemon.core.enums.Stat;
+import src.pas.pokemon.agents.TreeNode;
 
 
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -59,18 +64,73 @@ public class TreeTraversalAgent
         public int getMaxDepth() { return this.maxDepth; }
         public int getMyTeamIdx() { return this.myTeamIdx; }
 
-		/**
-		 * TODO: implement me!
-		 * This method should perform your tree-search from the root of the entire tree.
-         * You are welcome to add any extra parameters that you want! If you do, you will also have to change
-         * The call method in this class!
+		/*
 		 * @param node the node to perform the search on (i.e. the root of the entire tree)
 		 * @return The MoveView that your agent should execute
 		 */
         public MoveView stochasticTreeSearch(BattleView rootView) //, int depth)
         {
-            return null;
+            TreeNode root = new TreeNode(rootView, null, 1.0); //guarantee since root node
+            root.expand(myTeamIdx);
+
+            MoveView bestMove = null;
+            double bestValue = Double.NEGATIVE_INFINITY;
+
+            for (TreeNode child : root.getChildren()) {
+                double value = expectimax(child, maxDepth, false);
+                if (value > bestValue) {
+                    bestValue = value;
+                    bestMove = child.getMove();
+                }
+            }
+            return bestMove;
         }
+
+
+        private double evaluateState(BattleView state) {
+            double myScore = 0.0;
+            double opponentScore = 0.0;
+            Team.TeamView myTeam = getMyTeamView(state);
+            Team.TeamView opponentTeam = getOpponentTeamView(state);
+            for (int i = 0; i < myTeam.size(); i++) {
+                if (!myTeam.getPokemonView(i).hasFainted()) {
+                    myScore += (double) myTeam.getPokemonView(i).getCurrentStat(Stat.HP) / myTeam.getPokemonView(i).getBaseStat(Stat.HP);
+                }
+            }
+            for (int i = 0; i < opponentTeam.size(); i++) {
+                if (!opponentTeam.getPokemonView(i).hasFainted()) {
+                    opponentScore += (double) opponentTeam.getPokemonView(i).getCurrentStat(Stat.HP) / opponentTeam.getPokemonView(i).getBaseStat(Stat.HP);
+                }
+            }
+            return myScore - opponentScore;
+        }
+
+        private double expectimax(TreeNode node, int depth, boolean isMaximizing) {
+            //either reached max depth or terminal
+            if (depth == 0 || node.isTerminal()) {
+                return evaluateState(node.getState());
+            }
+
+            if (isMaximizing) {
+                double best = Double.NEGATIVE_INFINITY;
+
+                for (TreeNode child : node.getChildren()) {
+                    double moveVal = expectimax(child, depth-1, false);
+                    best = Math.max(best, moveVal);
+                }
+                return best;
+            } else {
+                int opponentIdx = 1; //opponent idx should be 1, could add an checker
+                double worst = Double.POSITIVE_INFINITY;
+
+                for (TreeNode child : node.getChildren()) {
+                    double moveVal = expectimax(child, depth-1, true);
+                    worst = Math.min(worst, moveVal);
+                }
+                return worst;
+            }
+        }
+
 
         @Override
         public Pair<MoveView, Long> call() throws Exception
@@ -104,7 +164,9 @@ public class TreeTraversalAgent
     @Override
     public Integer chooseNextPokemon(BattleView view)
     {
-        // TODO: replace me! This code calculates the first-available pokemon.
+        
+        //can improve, currently just chooses next available
+
         // It is likely a good idea to expand a bunch of trees with different choices as the active pokemon on your
         // team, and see which pokemon is your best choice by comparing the values of the root nodes.
 
