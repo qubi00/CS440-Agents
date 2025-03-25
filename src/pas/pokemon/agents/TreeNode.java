@@ -10,7 +10,13 @@ import java.util.List;
 import java.util.Arrays;
 
 public class TreeNode {
-    public enum NodeType{MAX, MIN, CHANCE};
+    public enum NodeType{
+        MAX, 
+        MIN, 
+        MOVE_ORDER_CHANCE,
+        MOVE_RESOLUTION_CHANCE,
+        POST_TURN_CHANCE
+    };
 
     private BattleView state;
     private MoveView lastMove;
@@ -56,7 +62,8 @@ public class TreeNode {
                     }
                     double prob = outcome.getFirst();
                     BattleView nextState = outcome.getSecond();
-                    children.add(new TreeNode(nextState, move, prob, NodeType.CHANCE));
+                    //node for when move resolves
+                    children.add(new TreeNode(nextState, move, prob, NodeType.MOVE_RESOLUTION_CHANCE));
                     count++;
                 }
             }
@@ -64,19 +71,64 @@ public class TreeNode {
         }
     }
 
-    public void expandChance(){
-        BattleView outcome1 = state;
-        BattleView outcome2 = state;
-        children.add(new TreeNode(outcome1, lastMove, .5, NodeType.MAX));
-        children.add(new TreeNode(outcome2, lastMove, .5, NodeType.MIN));
+    public List<Pair<Double, BattleView>> getMoveResolutionOutcomes(BattleView state, MoveView move){
+        double hitProb = move.getAccuracy(); 
+        List<Pair<Double, BattleView>> outcomes = new ArrayList<>();
+        outcomes.add(new Pair<>(hitProb, state));
+        outcomes.add(new Pair<>(1-hitProb, state));
+        return outcomes;
+    }
+
+    public void expandMoveResolution(){
+        List<Pair<Double, BattleView>> outcomes = getMoveResolutionOutcomes(state, lastMove);
+        for(Pair<Double, BattleView> outcome: outcomes){
+            children.add(new TreeNode(outcome.getSecond(), lastMove, outcome.getFirst(), NodeType.POST_TURN_CHANCE));
+        }
+    }
+
+
+    public double getProbability(BattleView state){
+        //currently 50/50. should add speed checking
+        return .5;
+    }
+
+    public void expandMoveOrder(int teamIdx){
+        double probPlayer = getProbability(state);
+        double probEnemy = 1 - probPlayer;
+
+        TreeNode playerNode = new TreeNode(state, null, probPlayer, NodeType.MAX);
+        TreeNode enemyNode = new TreeNode(state, null, probEnemy, NodeType.MIN);
+
+        children.add(playerNode);
+        children.add(enemyNode);
+    }
+
+    public void expandPostTurn(int teamIdx){
+        if(isTerminal()){
+            return;
+        }
+        //new turn. check if tree expansion expands beyond their turn.
+        children.add(new TreeNode(state, null, 1, NodeType.MOVE_ORDER_CHANCE));
     }
 
 
     public void expand(int teamIdx){
-        if(this.type == NodeType.MAX || this.type == NodeType.MIN){
-            expandDecision(teamIdx);
-        }else if(this.type == NodeType.CHANCE){
-            expandChance();
+        switch(this.type){
+            case MAX:
+                expandDecision(teamIdx);
+                break;
+            case MIN:
+                expandDecision(teamIdx);
+                break;
+            case MOVE_ORDER_CHANCE:
+                expandMoveOrder(teamIdx);
+                break;
+            case MOVE_RESOLUTION_CHANCE:
+                expandMoveResolution();
+                break;
+            case POST_TURN_CHANCE:
+                expandPostTurn(teamIdx);
+                break;
         }
 
     }

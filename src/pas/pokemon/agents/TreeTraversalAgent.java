@@ -71,17 +71,22 @@ public class TreeTraversalAgent
 		 */
         public MoveView stochasticTreeSearch(BattleView rootView) //, int depth)
         {
-            TreeNode root = new TreeNode(rootView, null, 1.0, NodeType.MAX); //guarantee since root node
+            //checks if enemy or us moves first
+            TreeNode root = new TreeNode(rootView, null, 1.0, NodeType.MOVE_ORDER_CHANCE); 
             root.expand(myTeamIdx);
 
             MoveView bestMove = null;
             double bestValue = Double.NEGATIVE_INFINITY;
 
             for (TreeNode child : root.getChildren()) {
-                double value = expectimax(child, maxDepth);
-                if (value > bestValue) {
-                    bestValue = value;
-                    bestMove = child.getMove();
+                Pair<MoveView, Double> eval = expectimax(child, maxDepth);
+                if (eval.getSecond() > bestValue) {
+                    bestValue = eval.getSecond();
+                    if(child.getMove() != null){
+                        bestMove = child.getMove();
+                    }else{
+                        bestMove = eval.getFirst();
+                    }
                 }
             }
             return bestMove;
@@ -127,6 +132,7 @@ public class TreeTraversalAgent
             }
 
             //after fully using razor leaf, bulbasaur uses vine whip. could be out of mp
+            //lvl doesnt seem to matter. lvl 13 could use lvl 27 moves
         
             double hpWeight = -20, atkWeight = -20, spatkWeight = 3, defWeight = 0.5, spdefWeight = 0.5, speedWeight = 1, statusPenaltyWeight = 1.2;
         
@@ -149,10 +155,10 @@ public class TreeTraversalAgent
             return penalty;
         }
 
-        private double expectimax(TreeNode node, int depth) {
+        private Pair<MoveView, Double> expectimax(TreeNode node, int depth) {
             //either reached max depth or terminal
             if(depth == 0 || node.isTerminal()){
-                return evaluateState(node.getState());
+                return new Pair<>(node.getMove(), evaluateState(node.getState()));
             }
 
             if(node.getChildren().isEmpty() && depth > 0){
@@ -162,31 +168,53 @@ public class TreeTraversalAgent
             switch (node.getType()) {
                 case MAX:
                     double best = Double.NEGATIVE_INFINITY;
-
+                    MoveView bestMove = null;
                     for (TreeNode child : node.getChildren()) {
-                        double moveVal = expectimax(child, depth-1);
-                        best = Math.max(best, moveVal);
+                        Pair<MoveView, Double> childEval = expectimax(child, depth - 1);
+                        if(childEval.getSecond() > best){
+                            best = childEval.getSecond();
+                            if(child.getMove() != null){
+                                bestMove = child.getMove();
+                            }else{
+                                bestMove = childEval.getFirst();
+                            }
+                        }
                     }
-                    return best;
-              
+                    return new Pair<>(bestMove, best);
+
                 case MIN:
                     int opponentIdx = 1; //opponent idx should be 1, could add an checker
                     double worst = Double.POSITIVE_INFINITY;
-
+                    MoveView worstMove = null;
                     for (TreeNode child : node.getChildren()) {
-                        double moveVal = expectimax(child, depth-1);
-                        worst = Math.min(worst, moveVal);
+                        Pair<MoveView, Double> childEval = expectimax(child, depth - 1);
+                        if(childEval.getSecond() < worst){
+                            worst = childEval.getSecond();
+                            if(child.getMove() != null){
+                                worstMove = child.getMove();
+                            }else{
+                                worstMove = childEval.getFirst();
+                            }
+                        }
                     }
-                    return worst;
+                    return new Pair<>(worstMove, worst);
 
-                case CHANCE:
-                    double expected = 0.0;
-                    for (TreeNode child : node.getChildren()) {
-                        expected += child.getProbability() * expectimax(child, depth-1);
+                case MOVE_ORDER_CHANCE:
+                case MOVE_RESOLUTION_CHANCE:
+                case POST_TURN_CHANCE: {
+                    double expectedValue = 0.0;
+                    MoveView expansion = null;
+                    for (TreeNode child : node.getChildren()){
+                        Pair<MoveView, Double> childEval = expectimax(child, depth - 1);
+                        expectedValue += child.getProbability() * childEval.getSecond();
+                        if (expansion == null && childEval.getFirst() != null){
+                            expansion = childEval.getFirst();
+                        }
                     }
-                    return expected;
+                    return new Pair<>(expansion, expectedValue);
+                }
                 default:
-                    return evaluateState(node.getState());
+                    return new Pair<>(node.getMove(), evaluateState(node.getState()));
             }
         }
 
@@ -211,7 +239,7 @@ public class TreeTraversalAgent
     {
         super();
         this.maxThinkingTimePerMoveInMS = 180000 * 2; // 6 min/move
-        this.maxDepth = 5; // set this however you want
+        this.maxDepth = 10; // set this however you want
     }
 
     /**
