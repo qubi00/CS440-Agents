@@ -12,8 +12,14 @@ import edu.bu.pas.pokemon.core.Move;
 import edu.bu.pas.pokemon.core.Move.MoveView;
 import edu.bu.pas.pokemon.utils.Pair;
 import src.pas.pokemon.agents.TreeTraversalAgent.TreeNode.NodeType;
+import edu.bu.pas.pokemon.core.enums.Flag;
 import edu.bu.pas.pokemon.core.enums.Stat;
 import edu.bu.pas.pokemon.core.Pokemon.PokemonView;
+import edu.bu.pas.pokemon.core.enums.Type;
+import edu.bu.pas.pokemon.core.callbacks.Callback;
+import edu.bu.pas.pokemon.core.callbacks.DoDamageCallback;
+import edu.bu.pas.pokemon.core.callbacks.MultiCallbackCallback;
+import edu.bu.pas.pokemon.core.callbacks.ResetLastDamageDealtCallback;
 
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -87,8 +93,14 @@ public class TreeTraversalAgent
             TreeNode playerNode = new TreeNode(state, null, probPlayer, NodeType.DETERMINISTIC, true);
             TreeNode enemyNode = new TreeNode(state, null, probEnemy, NodeType.DETERMINISTIC, false);
 
-            children.add(playerNode);
-            children.add(enemyNode);
+            if(probPlayer == 0){
+                children.add(enemyNode);
+            }else if(probEnemy == 0){
+                children.add(playerNode);
+            }else{
+                children.add(playerNode);
+                children.add(enemyNode);
+            }
         }
     
     
@@ -99,7 +111,8 @@ public class TreeTraversalAgent
             for(MoveView move : legalMoves){
                 List<Pair<Double, BattleView>> outcomes = move.getPotentialEffects(state, 0, 0);
                 for(Pair<Double, BattleView> outcome : outcomes){
-                    TreeNode child = new TreeNode(outcome.getSecond(), move, move.getAccuracy(), NodeType.MOVE_RESOLUTION_CHANCE, !isMax);
+                    TreeNode child = new TreeNode(outcome.getSecond(), move, outcome.getFirst(), NodeType.MOVE_RESOLUTION_CHANCE, !isMax);
+                    child.expandMoveResolution();
                     children.add(child);
                 }
             }
@@ -107,14 +120,85 @@ public class TreeTraversalAgent
 
 
         public void expandMoveResolution(){
-            TreeNode postTurnNode = new TreeNode(state, null, probability, NodeType.POST_TURN_CHANCE, true);
-            state.applyPostTurnConditions();
-            children.add(postTurnNode);
+            int teamIdx = 0;
+            if(isMax){
+                teamIdx = 0;
+            }else{
+                teamIdx = 1;
+            }
+            
+            PokemonView pokemon = state.getTeamView(teamIdx).getActivePokemonView();
+
+            switch(pokemon.getNonVolatileStatus()){
+                case SLEEP:
+                case PARALYSIS:
+                case FREEZE:
+                    double successProb = 0.7;
+                    double failProb = 0.3;
+                    //success
+                    TreeNode successBranch = new TreeNode(state, lastMove, successProb, NodeType.MOVE_RESOLUTION_CHANCE, isMax);
+                    successBranch.expandMoveResolutionChance();
+                    //fail
+                    TreeNode failBranch = new TreeNode(state, lastMove, failProb, NodeType.POST_TURN_CHANCE, isMax);
+                    children.add(successBranch);
+                    children.add(failBranch);
+                    break;
+                case POISON:
+                    break;
+                case BURN:
+                    break;
+                case TOXIC:
+                    break;
+                case NONE:
+                    this.expandMoveResolutionChance();
+            }
+            if(pokemon.getFlag(Flag.CONFUSED) == true){
+                Move hurtYourselfMove = new Move(
+                "SelfDamage",          // Move name
+                Type.NORMAL,           // Damage type (treated as typeless)
+                Move.Category.PHYSICAL,// Move category
+                40,                    // Base power (standard for confusion)
+                null,                  // Infinite accuracy
+                Integer.MAX_VALUE,      // PP (number of uses)
+                1,                     // Critical hit ratio
+                0                      // Priority
+                ).addCallback(
+                    new MultiCallbackCallback(
+                    new  ResetLastDamageDealtCallback(), // Reset last damage so it calculates fresh.
+                    new DoDamageCallback(
+                        edu.bu.pas.pokemon.core.enums.Target.CASTER, // Hurt yourself
+                        false, // Don't include STAB term in damage calculation
+                        false, // Ignore type effectiveness
+                        true   // Damage ignores substitutes
+                    )));
+                List<Pair<Double, BattleView>> confusionDamageOutcomes = hurtYourselfMove
+                .getView().getPotentialEffects(state, 0, 0);
+                for(Pair<Double, BattleView> outcome : confusionDamageOutcomes){
+                    TreeNode outcomeBranch = new TreeNode(outcome.getSecond(), lastMove, outcome.getFirst(), NodeType.POST_TURN_CHANCE, isMax);
+                    outcomeBranch.expandPostTurnChance();
+                    children.add(outcomeBranch);
+                }
+        
+            }
         }
+
+
+        public void expandMoveResolutionChance(){
+            List<Pair<Double, BattleView>> outcomes = lastMove.getPotentialEffects(state, 0, 0);
+            for (Pair<Double, BattleView> outcome : outcomes) {
+                double moveProb = outcome.getFirst();
+                BattleView moveState = outcome.getSecond();
+        
+                double finalProb = this.probability * moveProb;
+                TreeNode postTurnNode = new TreeNode(moveState, lastMove, finalProb, NodeType.POST_TURN_CHANCE, isMax);
+                children.add(postTurnNode);
+            }
+        }
+
 
         public void expandPostTurnChance(){
             if(state.isOver()){
-                state.getTeam1View().getActivePokemonView().getCurrentStat(Stat.HP);
+                return;
             }else{
                 //not done, turn 2, etc.
                 int speed1 = state.getTeamView(0).getActivePokemonView().getCurrentStat(Stat.SPD);
@@ -185,13 +269,19 @@ public class TreeTraversalAgent
 
         public Pair<MoveView, Double> expectimax(TreeNode node, int depth) {
             //either reached max depth or terminal
-            if(depth == 0 || node.state.isOver()){
+            if(depth == 0){
+                return new Pair<>(node.getMove(), getHPAdvantage(node.getState()));
+            }else if(node.getState().isOver()){
                 return new Pair<>(node.getMove(), evaluateState(node.getState()));
             }
 
             if(node.getChildren().isEmpty()){
                 if(node.getType() == NodeType.DETERMINISTIC){
-                    node.expandDeterministic(getMyTeamIdx());
+                    if(node.isMax){
+                        node.expandDeterministic(getMyTeamIdx());
+                    }else{
+                        node.expandDeterministic(1 - getMyTeamIdx());
+                    }
                 }else if(node.getType() == TreeNode.NodeType.MOVE_ORDER_CHANCE){
                     int speed1 = node.state.getTeamView(0).getActivePokemonView().getCurrentStat(Stat.SPD);
                     int speed2 = node.state.getTeamView(1).getActivePokemonView().getCurrentStat(Stat.SPD);
@@ -326,142 +416,82 @@ public class TreeTraversalAgent
             return 1.0;
         }
 
-        public double getDamagePotential(PokemonView attacker, PokemonView defender){
-            if (attacker == null || defender == null || defender.getCurrentType1() == null){
-                return 0.0;
+        //use as utility if we cant reach a point where a pokemon faints
+        public double getHPAdvantage(BattleView state) {
+            TeamView myTeam = state.getTeam1View();
+            TeamView opponentTeam = state.getTeam2View();
+
+            boolean myAllFainted = true;
+            for (int i = 0; i < myTeam.size(); i++) {
+                if (!myTeam.getPokemonView(i).hasFainted()){
+                    myAllFainted = false;
+                    break;
+                }
             }
-        
-            double bestDmg = 0;
-        
-            for(MoveView move : attacker.getAvailableMoves()){
-                if(move == null || move.getPP() <= 0){
-                    continue;
+            boolean oppAllFainted = true;
+            for (int i = 0; i < opponentTeam.size(); i++) {
+                if (!opponentTeam.getPokemonView(i).hasFainted()){
+                    oppAllFainted = false;
+                    break;
                 }
-        
-                double baseAtk = 0.0;
-                if (move.getPower() != null) {
-                    baseAtk = move.getPower();
-                }
-        
-                double atkRatio = 0;
-                if (defender.getCurrentStat(Stat.DEF) > 0) {
-                    atkRatio = (double) attacker.getCurrentStat(Stat.ATK) / defender.getCurrentStat(Stat.DEF);
-                }
-        
-                double effective1 = getTypeEffectiveness(move.getType().name(), defender.getCurrentType1().name());
-        
-                double effective2 = 1.0;
-                if (defender.getCurrentType2() != null && !defender.getCurrentType2().equals(defender.getCurrentType1())) {
-                    effective2 = getTypeEffectiveness(move.getType().name(), defender.getCurrentType2().name());
-                }
-                double effective = effective1 * effective2;
-    
-                double dmgEstimate = baseAtk * atkRatio * effective;
-                bestDmg = Math.max(bestDmg, dmgEstimate);
             }
-        
-            return bestDmg;
+            if (myAllFainted) {
+                return Double.NEGATIVE_INFINITY;
+            }
+            if (oppAllFainted) {
+                return Double.POSITIVE_INFINITY;
+            }
+
+            
+            double myHPRatio = 0;
+            double opponentHPRatio = 0;
+            for(int i = 0; i < myTeam.size(); i++){
+                PokemonView p = myTeam.getPokemonView(i);
+                int currentHP = p.getCurrentStat(Stat.HP);
+                int maxHP = p.getBaseStat(Stat.HP);
+                myHPRatio += (double)currentHP/maxHP;
+            }
+            for(int i = 0; i < opponentTeam.size(); i++){
+                PokemonView p = opponentTeam.getPokemonView(i);
+                int currentHP = p.getCurrentStat(Stat.HP);
+                int maxHP = p.getBaseStat(Stat.HP);
+                myHPRatio += (double)currentHP/maxHP;
+            }
+            return 100 * (myHPRatio - opponentHPRatio);
         }
         
 
-
+        //terminal. if out pokemon faints, return 0 or some low number. if enemy faints, return high number
         public double evaluateState(BattleView state) {
-            final double hpWeight = 2;
-            final double damageWeight = .1;
-            final double statsWeight = .2;
-            final double statusWeight = .2;
-            final double faintedPenalty = 100.0;
-            
+            final double hpWeight = 1.0;
+            final double faintedPenalty = 100.0;  // heavy penalty if one of our Pokémon is fainted
             double myScore = 0.0;
             double opponentScore = 0.0;
             
             Team.TeamView myTeam = getMyTeamView(state);
             Team.TeamView opponentTeam = getOpponentTeamView(state);
-        
+            
             for (int i = 0; i < myTeam.size(); i++) {
                 PokemonView pokemon = myTeam.getPokemonView(i);
-                
-                if(!myTeam.getPokemonView(i).hasFainted()){
+                if (!pokemon.hasFainted()) {
                     double hpRatio = (double) pokemon.getCurrentStat(Stat.HP) / pokemon.getBaseStat(Stat.HP);
-                    PokemonView opponentActive = opponentTeam.getActivePokemonView();
-                    double bestDamagePotential = 0.0;
-                    if(opponentActive != null){
-                        bestDamagePotential = getDamagePotential(pokemon, opponentActive);
-                    }
-                    double statSum = ((double) pokemon.getCurrentStat(Stat.ATK) / pokemon.getBaseStat(Stat.ATK) +
-                     (double) pokemon.getCurrentStat(Stat.SPATK) / pokemon.getBaseStat(Stat.SPATK) +
-                     (double) pokemon.getCurrentStat(Stat.DEF) / pokemon.getBaseStat(Stat.DEF) +
-                     (double) pokemon.getCurrentStat(Stat.SPDEF) / pokemon.getBaseStat(Stat.SPDEF) +
-                     (double) pokemon.getCurrentStat(Stat.SPD) / pokemon.getBaseStat(Stat.SPD));
-
-                    double statusPenalty = getStatusEffectPenalty(pokemon);
-                    myScore += hpWeight * hpRatio + damageWeight * bestDamagePotential + statsWeight * statSum - statusWeight * statusPenalty;
-                }else{
-                    //should penalize a lot since for 1p game we only get 1 pokemon
+                    myScore += hpWeight * hpRatio;
+                } else {
                     myScore -= faintedPenalty;
-                    continue;
                 }
             }
-        
-            for (int i = 0; i < opponentTeam.size(); i++) {
+            
+            for(int i = 0; i < opponentTeam.size(); i++){
                 PokemonView pokemon = opponentTeam.getPokemonView(i);
-                
                 if(!pokemon.hasFainted()){
                     double hpRatio = (double) pokemon.getCurrentStat(Stat.HP) / pokemon.getBaseStat(Stat.HP);
-                    PokemonView myActive = myTeam.getActivePokemonView();
-                    double bestDamagePotential = 0.0;
-                    if(myActive != null){
-                        bestDamagePotential = getDamagePotential(pokemon, myActive);
-                    }
-                    double statSum = ((double) pokemon.getCurrentStat(Stat.ATK) / pokemon.getBaseStat(Stat.ATK) +
-                     (double) pokemon.getCurrentStat(Stat.SPATK) / pokemon.getBaseStat(Stat.SPATK) +
-                     (double) pokemon.getCurrentStat(Stat.DEF) / pokemon.getBaseStat(Stat.DEF) +
-                     (double) pokemon.getCurrentStat(Stat.SPDEF) / pokemon.getBaseStat(Stat.SPDEF) +
-                     (double) pokemon.getCurrentStat(Stat.SPD) / pokemon.getBaseStat(Stat.SPD));
-
-                    double statusPenalty = getStatusEffectPenalty(pokemon);
-                    opponentScore += hpWeight * hpRatio + damageWeight * bestDamagePotential + statsWeight * statSum - statsWeight * statusPenalty;
+                    opponentScore += hpWeight * hpRatio;
                 }else{
-                    opponentScore -= faintedPenalty;
-                    continue;
+                    opponentScore += faintedPenalty;
                 }
             }
 
-            //after fully using razor leaf, bulbasaur uses vine whip. could be out of mp
-            //lvl doesnt seem to matter. lvl 13 could use lvl 27 moves
-        
             return myScore - opponentScore;
-        }
-
-        private double getStatusEffectPenalty(PokemonView pokemon) {
-            double penalty = 0.0;
-            
-            //persistent status stuff. check if the penalties stack
-            switch (pokemon.getNonVolatileStatus()){
-                case BURN:
-                    penalty += 1.0/8;
-                    break;
-                case NONE:
-                    break;
-                case SLEEP:
-                    penalty += .92;
-                    break;
-                case POISON:
-                    penalty += 1.0/8;
-                    break;
-                case FREEZE:
-                    penalty += .92;
-                    break;
-                case TOXIC:
-                    penalty += pokemon.getNonVolatileStatusCounters()[NonVolatileStatus.TOXIC.ordinal()]/16.0;
-                    break;
-                case PARALYSIS:
-                    penalty += .25;
-                    break;
-
-            }
-            
-            return penalty;
         }
 
 
@@ -485,7 +515,7 @@ public class TreeTraversalAgent
     {
         super();
         this.maxThinkingTimePerMoveInMS = 180000 * 2; // 6 min/move
-        this.maxDepth = 4; // set this however you want
+        this.maxDepth = 5; // set this however you want
     }
 
     /**
@@ -568,7 +598,6 @@ public class TreeTraversalAgent
             e.printStackTrace();
             System.exit(-1);
         }
-
         return move;
     }
 }
