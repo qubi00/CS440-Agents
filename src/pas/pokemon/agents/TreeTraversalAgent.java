@@ -1,7 +1,6 @@
 package src.pas.pokemon.agents;
 
 
-import edu.bu.labs.pokemon.core.enums.NonVolatileStatus;
 // SYSTEM IMPORTS....feel free to add your own imports here! You may need/want to import more from the .jar!
 import edu.bu.pas.pokemon.core.Agent;
 import edu.bu.pas.pokemon.core.Battle;
@@ -20,13 +19,15 @@ import edu.bu.pas.pokemon.core.callbacks.Callback;
 import edu.bu.pas.pokemon.core.callbacks.DoDamageCallback;
 import edu.bu.pas.pokemon.core.callbacks.MultiCallbackCallback;
 import edu.bu.pas.pokemon.core.callbacks.ResetLastDamageDealtCallback;
-
+import java.util.Random;
+import java.util.Set;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Callable;
@@ -46,60 +47,90 @@ public class TreeTraversalAgent
 {
     public static class TreeNode {
         public enum NodeType{
-            DETERMINISTIC,
             MOVE_ORDER_CHANCE,
-            MOVE_RESOLUTION_CHANCE,
-            POST_TURN_CHANCE
+            DETERMINISTIC, 
+            MEGA_CHANCE,
+            POST_TURN
         };
     
         private BattleView state;
-        private MoveView lastMove;
+        private MoveView move;
+        private Set<MoveView> moveSet;
         private double probability;
         private List<TreeNode> children; //future states
         private NodeType type;
         private boolean isMax;
+        private int depth;
     
-        public TreeNode(BattleView state, MoveView move, double probability, NodeType type, boolean isMax) {
+        public TreeNode(BattleView state, MoveView move, Set<MoveView> moveSet, double probability, NodeType type, boolean isMax, int depth) {
             this.state = state;
-            this.lastMove = move;
+            this.move = move;
+            this.moveSet = moveSet;
             this.probability = probability;
             this.children = new ArrayList<>();
             this.type = type;
             this.isMax = isMax;
+            this.depth = depth;
         }
     
     
         public BattleView getState() {return state;}
-        public MoveView getMove() {return lastMove;}
+        public MoveView getMove() {return move;}
+        public Set<MoveView> getMoveSet() {return moveSet;}
         public double getProbability() {return probability;}
         public List<TreeNode> getChildren() {return children;}
         public NodeType getType() {return type;}
 
 
-        public void expandMoveOrder(BattleView state, int speed1, int speed2){
-            //check speed
-            double probPlayer = 0;
-            double probEnemy = 0;
+        public void expandMoveOrder(BattleView state){
+            PokemonView p1 = state.getTeam1View().getActivePokemonView();
+            PokemonView p2 = state.getTeam2View().getActivePokemonView();
 
-            if(speed1 > speed2){
-                probPlayer = 1;
-            }else if(speed2 > speed1){
-                probEnemy = 1;
-            }else{
-                probPlayer = .5;
-                probEnemy = .5;
+            List<MoveView> p1_moves = p1.getAvailableMoves();
+            List<MoveView> p2_moves = p2.getAvailableMoves();
+            int p1_speed = p1.getCurrentStat(Stat.SPD);
+            int p2_speed = p2.getCurrentStat(Stat.SPD);
+
+            Map<MoveView, Set<MoveView>> playerFirst = new HashMap<>();
+            Map<MoveView, Set<MoveView>> enemyFirst = new HashMap<>();
+
+            for(MoveView m1 : p1_moves){
+                for(MoveView m2 : p2_moves){
+                    boolean usFirst;
+                    if (m1.getPriority() > m2.getPriority()) {
+                        usFirst = true;
+                    }else if(m1.getPriority() < m2.getPriority()){
+                        usFirst = false;
+                    }else{ //equal priority
+                        if(p1_speed > p2_speed){
+                            usFirst = true;
+                        }else if(p1_speed < p2_speed){
+                            usFirst = false;
+                        }else{ //both us and enemy first
+                            usFirst = true;
+                            enemyFirst.computeIfAbsent(m2, k -> new HashSet<>()).add(m1);
+                        }
+                    }
+                    if(usFirst){
+                        playerFirst.computeIfAbsent(m1, k -> new HashSet<>()).add(m2);
+                    } else {
+                        enemyFirst.computeIfAbsent(m2, k -> new HashSet<>()).add(m1);
+                    }
+                }
+        }
+            children.clear();
+            //player first subtree
+            for (Map.Entry<MoveView, Set<MoveView>> entry : playerFirst.entrySet()) {
+                MoveView ourMove = entry.getKey();
+                Set<MoveView> opponentValidMoves = entry.getValue();
+                children.add(new TreeNode(state, ourMove, opponentValidMoves, 1.0, NodeType.DETERMINISTIC, true, depth+1));
             }
-            //can prune here with speed
-            TreeNode playerNode = new TreeNode(state, null, probPlayer, NodeType.DETERMINISTIC, true);
-            TreeNode enemyNode = new TreeNode(state, null, probEnemy, NodeType.DETERMINISTIC, false);
-
-            if(probPlayer == 0){
-                children.add(enemyNode);
-            }else if(probEnemy == 0){
-                children.add(playerNode);
-            }else{
-                children.add(playerNode);
-                children.add(enemyNode);
+        
+            //enemy first subtree
+            for (Map.Entry<MoveView, Set<MoveView>> entry : enemyFirst.entrySet()) {
+                MoveView opponentMove = entry.getKey();
+                Set<MoveView> ourValidMoves = entry.getValue();
+                children.add(new TreeNode(state, opponentMove, ourValidMoves, 1.0, NodeType.DETERMINISTIC, false, depth+1));
             }
         }
     
@@ -107,19 +138,73 @@ public class TreeTraversalAgent
     
         //expand all possible moves for max/min nodes
         public void expandDeterministic(int teamIdx) {
-            List<MoveView> legalMoves = state.getTeamView(teamIdx).getActivePokemonView().getAvailableMoves();
-            for(MoveView move : legalMoves){
+            this.isMax = (teamIdx == 0);
+            
+            PokemonView p1 = state.getTeam1View().getActivePokemonView();
+            PokemonView p2 = state.getTeam2View().getActivePokemonView();
+
+            List<MoveView> p1_moves = p1.getAvailableMoves();
+            List<MoveView> p2_moves = p2.getAvailableMoves();
+            int p1_speed = p1.getCurrentStat(Stat.SPD);
+            int p2_speed = p2.getCurrentStat(Stat.SPD);
+
+            Map<MoveView, Set<MoveView>> playerFirst = new HashMap<>();
+            Map<MoveView, Set<MoveView>> enemyFirst = new HashMap<>();
+
+            for(MoveView m1 : p1_moves){
+                for(MoveView m2 : p2_moves){
+                    boolean usFirst;
+                    if (m1.getPriority() > m2.getPriority()) {
+                        usFirst = true;
+                    }else if(m1.getPriority() < m2.getPriority()){
+                        usFirst = false;
+                    }else{ //equal priority
+                        if(p1_speed > p2_speed){
+                            usFirst = true;
+                        }else if(p1_speed < p2_speed){
+                            usFirst = false;
+                        }else{ //both us and enemy first
+                            usFirst = true;
+                            enemyFirst.computeIfAbsent(m2, k -> new HashSet<>()).add(m1);
+                        }
+                    }
+                    if(usFirst){
+                        playerFirst.computeIfAbsent(m1, k -> new HashSet<>()).add(m2);
+                    } else {
+                        enemyFirst.computeIfAbsent(m2, k -> new HashSet<>()).add(m1);
+                    }
+                }
+        }
+            children.clear();
+            
+            for(Map.Entry<MoveView, Set<MoveView>> entry : playerFirst.entrySet()){
+                MoveView move = entry.getKey();
+                Set<MoveView> oppMoveSet = entry.getValue();
                 List<Pair<Double, BattleView>> outcomes = move.getPotentialEffects(state, 0, 0);
                 for(Pair<Double, BattleView> outcome : outcomes){
-                    TreeNode child = new TreeNode(outcome.getSecond(), move, outcome.getFirst(), NodeType.MOVE_RESOLUTION_CHANCE, !isMax);
-                    child.expandMoveResolution();
-                    children.add(child);
+                    TreeNode megaNode = new TreeNode(outcome.getSecond(), move, oppMoveSet, outcome.getFirst(), NodeType.MEGA_CHANCE, this.isMax, depth+1);
+                    megaNode.expandMoveResolution();
+                    children.add(megaNode);
+                }
+            }
+            
+            for(Map.Entry<MoveView, Set<MoveView>> entry : enemyFirst.entrySet()){
+                MoveView move = entry.getKey();
+                Set<MoveView> ourMoveSet = entry.getValue();
+                List<Pair<Double, BattleView>> outcomes = move.getPotentialEffects(state, 0, 0);
+                for(Pair<Double, BattleView> outcome : outcomes){
+                    TreeNode megaNode = new TreeNode(outcome.getSecond(), move, ourMoveSet, outcome.getFirst(),
+                        NodeType.MEGA_CHANCE, !this.isMax, depth+1);
+                    megaNode.expandMoveResolution();
+                    children.add(megaNode);
                 }
             }
         }
+        
 
 
         public void expandMoveResolution(){
+            //check this, sometimes not first
             int teamIdx = 0;
             if(isMax){
                 teamIdx = 0;
@@ -136,10 +221,16 @@ public class TreeTraversalAgent
                     double successProb = 0.7;
                     double failProb = 0.3;
                     //success
-                    TreeNode successBranch = new TreeNode(state, lastMove, successProb, NodeType.MOVE_RESOLUTION_CHANCE, isMax);
-                    successBranch.expandMoveResolutionChance();
+                    TreeNode successBranch = new TreeNode(state, this.getMove(), this.moveSet, successProb, NodeType.MEGA_CHANCE, isMax, depth+1);
+                    if(isMax){
+                        successBranch.expandDeterministic(1);
+                    }else{
+                        successBranch.expandDeterministic(0);
+                    }
+
                     //fail
-                    TreeNode failBranch = new TreeNode(state, lastMove, failProb, NodeType.POST_TURN_CHANCE, isMax);
+                    TreeNode failBranch = new TreeNode(state, this.getMove(), this.moveSet, failProb, NodeType.POST_TURN, isMax, depth+1);
+                    failBranch.expandPostTurn();
                     children.add(successBranch);
                     children.add(failBranch);
                     break;
@@ -150,7 +241,16 @@ public class TreeTraversalAgent
                 case TOXIC:
                     break;
                 case NONE:
-                    this.expandMoveResolutionChance();
+                    TreeNode nextPhase = new TreeNode(state, this.getMove(), this.moveSet, 1.0, NodeType.DETERMINISTIC, isMax, depth + 1);
+                    if(!state.isOver() && this.depth < 3){
+                        if(isMax){
+                            nextPhase.expandDeterministic(1);
+                        }else{
+                            nextPhase.expandDeterministic(0);
+                        }
+                    }
+                    children.add(nextPhase);
+                    break;
             }
             if(pokemon.getFlag(Flag.CONFUSED) == true){
                 Move hurtYourselfMove = new Move(
@@ -174,8 +274,9 @@ public class TreeTraversalAgent
                 List<Pair<Double, BattleView>> confusionDamageOutcomes = hurtYourselfMove
                 .getView().getPotentialEffects(state, 0, 0);
                 for(Pair<Double, BattleView> outcome : confusionDamageOutcomes){
-                    TreeNode outcomeBranch = new TreeNode(outcome.getSecond(), lastMove, outcome.getFirst(), NodeType.POST_TURN_CHANCE, isMax);
-                    outcomeBranch.expandPostTurnChance();
+                    TreeNode outcomeBranch = new TreeNode(outcome.getSecond(), this.getMove(), this.moveSet, 
+                    outcome.getFirst(), NodeType.POST_TURN, isMax, depth+1);
+                    outcomeBranch.expandPostTurn();
                     children.add(outcomeBranch);
                 }
         
@@ -183,28 +284,16 @@ public class TreeTraversalAgent
         }
 
 
-        public void expandMoveResolutionChance(){
-            List<Pair<Double, BattleView>> outcomes = lastMove.getPotentialEffects(state, 0, 0);
-            for (Pair<Double, BattleView> outcome : outcomes) {
-                double moveProb = outcome.getFirst();
-                BattleView moveState = outcome.getSecond();
-        
-                double finalProb = this.probability * moveProb;
-                TreeNode postTurnNode = new TreeNode(moveState, lastMove, finalProb, NodeType.POST_TURN_CHANCE, isMax);
-                children.add(postTurnNode);
-            }
-        }
-
-
-        public void expandPostTurnChance(){
-            if(state.isOver()){
+        public void expandPostTurn(){
+            this.getState().applyPostTurnConditions();
+            //terminal
+            if(this.getState().isOver()){
                 return;
             }else{
                 //not done, turn 2, etc.
-                int speed1 = state.getTeamView(0).getActivePokemonView().getCurrentStat(Stat.SPD);
-                int speed2 = state.getTeamView(1).getActivePokemonView().getCurrentStat(Stat.SPD);
-                TreeNode moveOrderNode = new TreeNode(state, null, 1.0, NodeType.MOVE_ORDER_CHANCE, true);
-                moveOrderNode.expandMoveOrder(state, speed1, speed2);
+                TreeNode moveOrderNode = new TreeNode(state, null, null, 1.0, 
+                NodeType.MOVE_ORDER_CHANCE, this.isMax, depth+1);
+                moveOrderNode.expandMoveOrder(state);
                 children.add(moveOrderNode);
             }
         }
@@ -244,10 +333,8 @@ public class TreeTraversalAgent
         public MoveView stochasticTreeSearch(BattleView rootView) //, int depth)
         {
             //checks if enemy or us moves first
-            TreeNode root = new TreeNode(rootView, null, 1.0, NodeType.MOVE_ORDER_CHANCE, true); 
-            int speed1 = rootView.getTeam1View().getActivePokemonView().getCurrentStat(Stat.SPD);
-            int speed2 = rootView.getTeam2View().getActivePokemonView().getCurrentStat(Stat.SPD);
-            root.expandMoveOrder(rootView, speed1, speed2);
+            TreeNode root = new TreeNode(rootView, null, null, 1.0, NodeType.MOVE_ORDER_CHANCE, true, 0); 
+            root.expandMoveOrder(rootView);
 
             MoveView bestMove = null;
             double bestValue = Double.NEGATIVE_INFINITY;
@@ -283,13 +370,11 @@ public class TreeTraversalAgent
                         node.expandDeterministic(1 - getMyTeamIdx());
                     }
                 }else if(node.getType() == TreeNode.NodeType.MOVE_ORDER_CHANCE){
-                    int speed1 = node.state.getTeamView(0).getActivePokemonView().getCurrentStat(Stat.SPD);
-                    int speed2 = node.state.getTeamView(1).getActivePokemonView().getCurrentStat(Stat.SPD);
-                    node.expandMoveOrder(node.state, speed1, speed2);
-                }else if(node.getType() == TreeNode.NodeType.MOVE_RESOLUTION_CHANCE){
+                    node.expandMoveOrder(node.state);
+                }else if(node.getType() == TreeNode.NodeType.MEGA_CHANCE){
                     node.expandMoveResolution();
-                }else if(node.getType() == TreeNode.NodeType.POST_TURN_CHANCE){
-                    node.expandPostTurnChance();
+                }else if(node.getType() == TreeNode.NodeType.POST_TURN){
+                    node.expandPostTurn();
                 }
             }
 
@@ -329,8 +414,8 @@ public class TreeTraversalAgent
                     }
 
                 case MOVE_ORDER_CHANCE:
-                case MOVE_RESOLUTION_CHANCE:
-                case POST_TURN_CHANCE: {
+                case MEGA_CHANCE:
+                case POST_TURN: {
                     double expectedValue = 0.0;
                     MoveView expansion = null;
                     for (TreeNode child : node.getChildren()){
@@ -348,6 +433,10 @@ public class TreeTraversalAgent
         }
 
 
+
+
+
+        //for heuristic
         public double getTypeEffectiveness(String moveType, String defenderType) {
             switch(moveType){
                 case "NORMAL":
@@ -416,6 +505,8 @@ public class TreeTraversalAgent
             return 1.0;
         }
 
+
+
         //use as utility if we cant reach a point where a pokemon faints
         public double getHPAdvantage(BattleView state) {
             TeamView myTeam = state.getTeam1View();
@@ -442,22 +533,28 @@ public class TreeTraversalAgent
                 return Double.POSITIVE_INFINITY;
             }
 
+            final double aliveBonus = 5000.0;
+            final double hpWeight = 1000.0;
+            final double typeAdvantageWeight = 2000.0;//prob need to put this in a dmg calc
+
             
-            double myHPRatio = 0;
-            double opponentHPRatio = 0;
+            double myScore = 0;
+            double opponentScore = 0;
             for(int i = 0; i < myTeam.size(); i++){
                 PokemonView p = myTeam.getPokemonView(i);
-                int currentHP = p.getCurrentStat(Stat.HP);
-                int maxHP = p.getBaseStat(Stat.HP);
-                myHPRatio += (double)currentHP/maxHP;
+                if (!p.hasFainted()) {
+                    double hpRatio = (double) p.getCurrentStat(Stat.HP) / p.getBaseStat(Stat.HP);
+                    myScore += aliveBonus + hpRatio * hpWeight;
+                }
             }
             for(int i = 0; i < opponentTeam.size(); i++){
                 PokemonView p = opponentTeam.getPokemonView(i);
-                int currentHP = p.getCurrentStat(Stat.HP);
-                int maxHP = p.getBaseStat(Stat.HP);
-                myHPRatio += (double)currentHP/maxHP;
+                if (!p.hasFainted()) {
+                    double hpRatio = (double) p.getCurrentStat(Stat.HP) / p.getBaseStat(Stat.HP);
+                    opponentScore += aliveBonus + hpRatio * hpWeight;
+                }
             }
-            return 100 * (myHPRatio - opponentHPRatio);
+            return myScore - opponentScore;
         }
         
 
@@ -487,11 +584,11 @@ public class TreeTraversalAgent
                     double hpRatio = (double) pokemon.getCurrentStat(Stat.HP) / pokemon.getBaseStat(Stat.HP);
                     opponentScore += hpWeight * hpRatio;
                 }else{
-                    opponentScore += faintedPenalty;
+                    myScore += faintedPenalty;
                 }
             }
 
-            return myScore - opponentScore;
+            return 100000 * (myScore - opponentScore);
         }
 
 
@@ -515,7 +612,7 @@ public class TreeTraversalAgent
     {
         super();
         this.maxThinkingTimePerMoveInMS = 180000 * 2; // 6 min/move
-        this.maxDepth = 5; // set this however you want
+        this.maxDepth = 3; // set this however you want
     }
 
     /**
