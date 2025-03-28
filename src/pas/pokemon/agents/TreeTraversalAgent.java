@@ -46,8 +46,8 @@ import java.util.concurrent.TimeoutException;
 public class TreeTraversalAgent
     extends Agent
 {
-    public static final double low_prob = 0.01;
-    public static int max_depth = 2;
+    public static final double low_prob = 0.1;
+    public static int max_depth = 1;
 
     public static class TreeNode {
         public enum NodeType{
@@ -89,13 +89,13 @@ public class TreeTraversalAgent
             return (this.depth >= max_depth);
         }
 
-        public void expandMoveOrder(BattleView state){
+        public void expandMoveOrder(BattleView state, int myIdx, int opIdx){
             if(atMaxDepth()){
                 return;
             }
 
-            PokemonView p1 = state.getTeam1View().getActivePokemonView();
-            PokemonView p2 = state.getTeam2View().getActivePokemonView();
+            PokemonView p1 = state.getTeamView(myIdx).getActivePokemonView();
+            PokemonView p2 = state.getTeamView(opIdx).getActivePokemonView();
 
             List<MoveView> p1_moves = p1.getAvailableMoves();
             List<MoveView> p2_moves = p2.getAvailableMoves();
@@ -131,31 +131,36 @@ public class TreeTraversalAgent
         }
             children.clear();
             //player first subtree
-            for (Map.Entry<MoveView, Set<MoveView>> entry : playerFirst.entrySet()) {
+            for(Map.Entry<MoveView, Set<MoveView>> entry : playerFirst.entrySet()){
                 MoveView ourMove = entry.getKey();
                 Set<MoveView> opponentValidMoves = entry.getValue();
                 children.add(new TreeNode(state, ourMove, opponentValidMoves, 1.0, NodeType.DETERMINISTIC, true, depth+1));
             }
         
             //enemy first subtree
-            for (Map.Entry<MoveView, Set<MoveView>> entry : enemyFirst.entrySet()) {
-                MoveView opponentMove = entry.getKey();
+            for(Map.Entry<MoveView, Set<MoveView>> entry : enemyFirst.entrySet()){
                 Set<MoveView> ourValidMoves = entry.getValue();
-                children.add(new TreeNode(state, opponentMove, ourValidMoves, 1.0, NodeType.DETERMINISTIC, false, depth+1));
+                for (MoveView ourMove : ourValidMoves) {
+                    children.add(new TreeNode(state, ourMove, Collections.singleton(ourMove), 1.0, NodeType.DETERMINISTIC, false, depth+1));
+                }
             }
         }
     
     
     
         //expand all possible moves for max/min nodes
-        public void expandDeterministic(int teamIdx) {
+        public void expandDeterministic(int teamIdx, int myIdx, int opIdx){
             if(atMaxDepth()){
                 return;
             }
-            this.isMax = (teamIdx == 0);
-            
-            PokemonView p1 = state.getTeam1View().getActivePokemonView();
-            PokemonView p2 = state.getTeam2View().getActivePokemonView();
+            if(teamIdx == myIdx){
+                this.isMax = true;
+            }else{
+                this.isMax = false;
+            }
+
+            PokemonView p1 = state.getTeamView(myIdx).getActivePokemonView();
+            PokemonView p2 = state.getTeamView(opIdx).getActivePokemonView();
 
             List<MoveView> p1_moves = p1.getAvailableMoves();
             List<MoveView> p2_moves = p2.getAvailableMoves();
@@ -194,10 +199,10 @@ public class TreeTraversalAgent
             for(Map.Entry<MoveView, Set<MoveView>> entry : playerFirst.entrySet()){
                 MoveView move = entry.getKey();
                 Set<MoveView> oppMoveSet = entry.getValue();
-                List<Pair<Double, BattleView>> outcomes = move.getPotentialEffects(state, 0, 0);
+                List<Pair<Double, BattleView>> outcomes = move.getPotentialEffects(state, myIdx, opIdx);
                 for(Pair<Double, BattleView> outcome : outcomes){
                     TreeNode megaNode = new TreeNode(outcome.getSecond(), move, oppMoveSet, outcome.getFirst(), NodeType.MEGA_CHANCE, this.isMax, depth+1);
-                    megaNode.expandMoveResolution();
+                    megaNode.expandMoveResolution(myIdx, opIdx);
                     children.add(megaNode);
                 }
             }
@@ -205,11 +210,11 @@ public class TreeTraversalAgent
             for(Map.Entry<MoveView, Set<MoveView>> entry : enemyFirst.entrySet()){
                 MoveView move = entry.getKey();
                 Set<MoveView> ourMoveSet = entry.getValue();
-                List<Pair<Double, BattleView>> outcomes = move.getPotentialEffects(state, 0, 0);
+                List<Pair<Double, BattleView>> outcomes = move.getPotentialEffects(state, myIdx, opIdx);
                 for(Pair<Double, BattleView> outcome : outcomes){
                     TreeNode megaNode = new TreeNode(outcome.getSecond(), move, ourMoveSet, outcome.getFirst(),
                         NodeType.MEGA_CHANCE, !this.isMax, depth+1);
-                    megaNode.expandMoveResolution();
+                    megaNode.expandMoveResolution(myIdx, opIdx);
                     children.add(megaNode);
                 }
             }
@@ -217,24 +222,26 @@ public class TreeTraversalAgent
         
 
 
-        public void expandMoveResolution(){
+        public void expandMoveResolution(int myIdx, int opIdx){
             if(atMaxDepth()){
                 return;
             }
             //check this, sometimes not first
             int teamIdx = 0;
             if(isMax){
-                teamIdx = 0;
+                teamIdx = myIdx;
             }else{
-                teamIdx = 1;
+                teamIdx = opIdx;
             }
             
             PokemonView pokemon = state.getTeamView(teamIdx).getActivePokemonView();
             if(pokemon.hasFainted()){
                 if(!pokemon.getFlag(Flag.TRAPPED)){
-                    TreeNode switchBranch = new TreeNode(state, this.getMove(), null, 
-                        1.0, NodeType.POST_TURN, isMax, depth + 1);
-                    switchBranch.expandPostTurn();
+                    PokemonView newActive =  state.getTeamView(teamIdx).getActivePokemonView();
+                    Set<MoveView> newMoveSet = new HashSet<>(newActive.getAvailableMoves());
+                    TreeNode switchBranch = new TreeNode(state, null, newMoveSet, 1.0, 
+                    NodeType.POST_TURN, isMax, depth + 1);
+                    switchBranch.expandPostTurn(myIdx, opIdx);
                     children.add(switchBranch);
                 }
                 return;
@@ -247,13 +254,13 @@ public class TreeTraversalAgent
                     
                     TreeNode wakeBranch = new TreeNode(state, this.getMove(), this.moveSet, wakeProb, NodeType.MEGA_CHANCE, isMax, depth+1);
                     if(isMax){
-                        wakeBranch.expandDeterministic(1);
+                        wakeBranch.expandDeterministic(opIdx, myIdx, opIdx);
                     } else {
-                        wakeBranch.expandDeterministic(0);
+                        wakeBranch.expandDeterministic(myIdx, myIdx, opIdx);
                     }
                     
                     TreeNode sleepBranch = new TreeNode(state, this.getMove(), this.moveSet, sleepProb, NodeType.POST_TURN, isMax, depth+1);
-                    sleepBranch.expandPostTurn();
+                    sleepBranch.expandPostTurn(myIdx, opIdx);
                     children.add(wakeBranch);
                     children.add(sleepBranch);
                     break;
@@ -262,12 +269,12 @@ public class TreeTraversalAgent
                     double loseProb = 1.0 - moveProb;
                     TreeNode moveBranch = new TreeNode(state, this.getMove(), this.moveSet, moveProb, NodeType.MEGA_CHANCE, isMax, depth+1);
                     if(isMax){
-                        moveBranch.expandDeterministic(1);
+                        moveBranch.expandDeterministic(opIdx, myIdx, opIdx);
                     } else {
-                        moveBranch.expandDeterministic(0);
+                        moveBranch.expandDeterministic(myIdx, myIdx, opIdx);
                     }
                     TreeNode loseBranch = new TreeNode(state, this.getMove(), this.moveSet, loseProb, NodeType.POST_TURN, isMax, depth+1);
-                    loseBranch.expandPostTurn();
+                    loseBranch.expandPostTurn(myIdx, opIdx);
                     children.add(moveBranch);
                     children.add(loseBranch);
                     break;
@@ -276,37 +283,37 @@ public class TreeTraversalAgent
                     double remainProb = 1.0 - thawProb;
                     TreeNode thawBranch = new TreeNode(state, this.getMove(), this.moveSet, thawProb, NodeType.MEGA_CHANCE, isMax, depth+1);
                     if(isMax){
-                        thawBranch.expandDeterministic(1);
+                        thawBranch.expandDeterministic(opIdx, myIdx, opIdx);
                     } else {
-                        thawBranch.expandDeterministic(0);
+                        thawBranch.expandDeterministic(myIdx, myIdx, opIdx);
                     }
                     TreeNode frozenBranch = new TreeNode(state, this.getMove(), this.moveSet, remainProb, NodeType.POST_TURN, isMax, depth+1);
-                    frozenBranch.expandPostTurn();
+                    frozenBranch.expandPostTurn(myIdx, opIdx);
                     children.add(thawBranch);
                     children.add(frozenBranch);
                     break;
                 case POISON:
                     TreeNode poisonBranch = new TreeNode(state, this.getMove(), this.moveSet, 1.0, NodeType.POST_TURN, isMax, depth+1);
-                    poisonBranch.expandPostTurn();
+                    poisonBranch.expandPostTurn(myIdx, opIdx);
                     children.add(poisonBranch);
                     break;
                 case BURN:
                     TreeNode burnBranch = new TreeNode(state, this.getMove(), this.moveSet, 1.0, NodeType.POST_TURN, isMax, depth+1);
-                    burnBranch.expandPostTurn();
+                    burnBranch.expandPostTurn(myIdx, opIdx);
                     children.add(burnBranch);
                     break;
                 case TOXIC:
                     TreeNode toxicBranch = new TreeNode(state, this.getMove(), this.moveSet, 1.0, NodeType.POST_TURN, isMax, depth+1);
-                    toxicBranch.expandPostTurn();
+                    toxicBranch.expandPostTurn(myIdx, opIdx);
                     children.add(toxicBranch);
                     break;
                 case NONE:
                     TreeNode nextPhase = new TreeNode(state, this.getMove(), this.moveSet, 1.0, NodeType.DETERMINISTIC, isMax, depth + 1);
-                    if(!state.isOver() && this.depth < 2){
+                    if(!state.isOver() && this.depth < max_depth){
                         if(isMax){
-                            nextPhase.expandDeterministic(1);
+                            nextPhase.expandDeterministic(opIdx, myIdx, opIdx);
                         }else{
-                            nextPhase.expandDeterministic(0);
+                            nextPhase.expandDeterministic(myIdx, myIdx, opIdx);
                         }
                     }
                     children.add(nextPhase);
@@ -332,42 +339,42 @@ public class TreeTraversalAgent
                         true   // Damage ignores substitutes
                     )));
                 List<Pair<Double, BattleView>> confusionDamageOutcomes = hurtYourselfMove
-                .getView().getPotentialEffects(state, 0, 0);
+                .getView().getPotentialEffects(state, myIdx, opIdx);
                 for(Pair<Double, BattleView> outcome : confusionDamageOutcomes){
-                    TreeNode outcomeBranch = new TreeNode(outcome.getSecond(), this.getMove(), this.moveSet, 
+                    TreeNode outcomeBranch = new TreeNode(outcome.getSecond(), null, this.moveSet, 
                     outcome.getFirst(), NodeType.POST_TURN, isMax, depth+1);
-                    outcomeBranch.expandPostTurn();
+                    outcomeBranch.expandPostTurn(myIdx, opIdx);
                     children.add(outcomeBranch);
                 }
             }else if(pokemon.getFlag(Flag.SEEDED)){
                     TreeNode seedBranch = new TreeNode(state, this.getMove(), this.moveSet, 1.0, NodeType.POST_TURN, isMax, depth+1);
-                    seedBranch.expandPostTurn();
+                    seedBranch.expandPostTurn(myIdx, opIdx);
                     children.add(seedBranch);
             }else if(pokemon.getFlag(Flag.FLINCHED)){
                 TreeNode flinchBranch = new TreeNode(state, this.getMove(), this.moveSet, 1.0, NodeType.POST_TURN, isMax, depth+1);
-                flinchBranch.expandPostTurn();
+                flinchBranch.expandPostTurn(myIdx, opIdx);
                 children.add(flinchBranch);
             }else if(pokemon.getFlag(Flag.FOCUS_ENERGY)){
                 TreeNode focusEnergyBranch = new TreeNode(state, this.getMove(), this.moveSet, 1.0, NodeType.DETERMINISTIC, isMax, depth+1);
                 if(isMax){
-                    focusEnergyBranch.expandDeterministic(1);
+                    focusEnergyBranch.expandDeterministic(opIdx, myIdx, opIdx);
                 } else {
-                    focusEnergyBranch.expandDeterministic(0);
+                    focusEnergyBranch.expandDeterministic(myIdx, myIdx, opIdx);
                 }
                 children.add(focusEnergyBranch);
             }else if(pokemon.getFlag(Flag.TRAPPED)) {
                 TreeNode trappedBranch = new TreeNode(state, this.getMove(), this.moveSet, 1.0, NodeType.DETERMINISTIC, isMax, depth+1);
                 if(isMax){
-                    trappedBranch.expandDeterministic(1);
+                    trappedBranch.expandDeterministic(opIdx, myIdx, opIdx);
                 } else {
-                    trappedBranch.expandDeterministic(0);
+                    trappedBranch.expandDeterministic(myIdx, myIdx, opIdx);
                 }
                 children.add(trappedBranch);
             }
         }
 
 
-        public void expandPostTurn(){
+        public void expandPostTurn(int myIdx, int opIdx){
             if(atMaxDepth()){
                 return;
             }
@@ -380,7 +387,7 @@ public class TreeTraversalAgent
                 for(BattleView newState : postTurnStates) {
                     TreeNode moveOrderNode = new TreeNode(newState, null, null, 1.0, 
                         NodeType.MOVE_ORDER_CHANCE, this.isMax, depth+1);
-                    moveOrderNode.expandMoveOrder(newState);
+                    moveOrderNode.expandMoveOrder(newState, myIdx, opIdx);
                     children.add(moveOrderNode);
                 }
             }
@@ -422,7 +429,16 @@ public class TreeTraversalAgent
         {
             //checks if enemy or us moves first
             TreeNode root = new TreeNode(rootView, null, null, 1.0, NodeType.MOVE_ORDER_CHANCE, true, 0); 
-            root.expandMoveOrder(rootView);
+
+            int myIdx = getMyTeamIdx();
+            int opIdx;
+            if(myIdx == 0){
+                opIdx = 1;
+            }else{
+                opIdx = 0;
+            }
+
+            root.expandMoveOrder(rootView, myIdx, opIdx);
 
             MoveView bestMove = null;
             double bestValue = Double.NEGATIVE_INFINITY;
@@ -449,20 +465,28 @@ public class TreeTraversalAgent
             }else if(node.getState().isOver()){
                 return new Pair<>(node.getMove(), evaluateState(node.getState()));
             }
+        
+            int myIdx = getMyTeamIdx();
+            int opIdx;
+            if(myIdx == 0){
+                opIdx = 1;
+            }else{
+                opIdx = 0;
+            }
 
             if(node.getChildren().isEmpty()){
                 if(node.getType() == NodeType.DETERMINISTIC){
                     if(node.isMax){
-                        node.expandDeterministic(getMyTeamIdx());
+                        node.expandDeterministic(myIdx, myIdx, opIdx);
                     }else{
-                        node.expandDeterministic(1 - getMyTeamIdx());
+                        node.expandDeterministic(opIdx, myIdx, opIdx);
                     }
                 }else if(node.getType() == TreeNode.NodeType.MOVE_ORDER_CHANCE){
-                    node.expandMoveOrder(node.state);
+                    node.expandMoveOrder(node.state, myIdx, opIdx);
                 }else if(node.getType() == TreeNode.NodeType.MEGA_CHANCE){
-                    node.expandMoveResolution();
+                    node.expandMoveResolution(myIdx, opIdx);
                 }else if(node.getType() == TreeNode.NodeType.POST_TURN){
-                    node.expandPostTurn();
+                    node.expandPostTurn(myIdx, opIdx);
                 }
             }
 
@@ -538,170 +562,6 @@ public class TreeTraversalAgent
 
 
         //for heuristic
-        public double getTypeEffectiveness(String moveType, String defenderType) {
-            switch(moveType){
-                case "NORMAL":
-                    if(defenderType.equals("ROCK")){
-                        return .5;
-                    }else if(defenderType.equals("GHOST")){
-                        return 0.0;
-                    }
-                    return 1.0;
-                case "FIRE":
-                    if(defenderType.equals("GRASS")||
-                    defenderType.equals("ICE")||
-                    defenderType.equals("BUG")){
-                        return 2.0;
-                    }else if(defenderType.equals("FIRE")||
-                    defenderType.equals("WATER")||
-                    defenderType.equals("ROCK")||
-                    defenderType.equals("DRAGON")){
-                        return .5;
-                    }
-                    return 1.0;
-                case "WATER":
-                    if(defenderType.equals("FIRE")||
-                    defenderType.equals("GROUND")||
-                    defenderType.equals("ROCK")){
-                        return 2.0;
-                    }else if(defenderType.equals("WATER")||
-                    defenderType.equals("GRASS")||
-                    defenderType.equals("DRAGON")){
-                        return .5;
-                    }
-                    return 1.0;
-                case "ELECTRIC":
-                    if(defenderType.equals("WATER")||
-                    defenderType.equals("FLYING")){
-                        return 2.0;
-                    }else if(defenderType.equals("ELECTRIC")||
-                    defenderType.equals("GRASS")||
-                    defenderType.equals("DRAGON")){
-                        return .5;
-                    }else if(defenderType.equals("GROUND")){
-                        return 0;
-                    }
-                    return 1.0;
-                case "GRASS":
-                    if(defenderType.equals("WATER")||
-                    defenderType.equals("GROUND")||
-                    defenderType.equals("ROCK")){
-                        return 2.0;
-                    }else if(defenderType.equals("FIRE")||
-                    defenderType.equals("GRASS")||
-                    defenderType.equals("FLYING")||
-                    defenderType.equals("BUG")||
-                    defenderType.equals("DRAGON")||
-                    defenderType.equals("POISON")){
-                        return .5;
-                    }
-                    return 1.0;
-                case "ICE":
-                    if(defenderType.equals("GRASS")||
-                    defenderType.equals("GROUND")||
-                    defenderType.equals("DRAGON")||
-                    defenderType.equals("FLYING")){
-                        return 2.0;
-                    }else if(defenderType.equals("WATER")||
-                    defenderType.equals("ICE")){
-                        return .5;
-                    }
-                    return 1.0;
-                case "FIGHTING":
-                    if(defenderType.equals("NORMAL")||
-                    defenderType.equals("ICE")||
-                    defenderType.equals("ROCK")){
-                        return 2.0;
-                    }else if(defenderType.equals("POISON")||
-                    defenderType.equals("PSYCHIC")||
-                    defenderType.equals("BUG")||
-                    defenderType.equals("FLYING")){
-                        return .5;
-                    }else if(defenderType.equals("GHOST")){
-                        return 0;
-                    }
-                    return 1.0;
-                case "POISON":
-                    if(defenderType.equals("GRASS")||
-                    defenderType.equals("BUG")){
-                        return 2.0;
-                    }else if(defenderType.equals("POISON")||
-                    defenderType.equals("GROUND")||
-                    defenderType.equals("ROCK")||
-                    defenderType.equals("GHOST")){
-                        return .5;
-                    }
-                    return 1.0;
-                case "GROUND":
-                    if(defenderType.equals("FIRE")||
-                    defenderType.equals("ELECTRIC")||
-                    defenderType.equals("POISON")||
-                    defenderType.equals("ROCK")){
-                        return 2.0;
-                    }else if(defenderType.equals("GRASS")||
-                    defenderType.equals("BUG")){
-                        return .5;
-                    }else if(defenderType.equals("FLYING")){
-                        return 0.0;
-                    }
-                    return 1;
-                case "FLYING":
-                    if(defenderType.equals("GRASS")||
-                    defenderType.equals("FIGHTING")||
-                    defenderType.equals("BUG")){
-                        return 2.0;
-                    }else if(defenderType.equals("ELECTRIC")||
-                    defenderType.equals("ROCK")){
-                        return .5;
-                    }
-                    return 1;
-                case "PSYCHIC":
-                    if(defenderType.equals("FIGHTING")||
-                    defenderType.equals("POISON")){
-                        return 2.0;
-                    }else if(defenderType.equals("PSYCHIC")){
-                        return .5;
-                    }
-                    return 1;
-                case "BUG":
-                    if(defenderType.equals("GRASS")||
-                    defenderType.equals("POISON")||
-                    defenderType.equals("PSYCHIC")){
-                        return 2.0;
-                    }else if(defenderType.equals("FIRE")||
-                    defenderType.equals("FLYING")||
-                    defenderType.equals("GHOST")||
-                    defenderType.equals("FIGHTING")){
-                        return .5;
-                    }
-                    return 1;
-                case "ROCK":
-                    if(defenderType.equals("FIRE")||
-                    defenderType.equals("ICE")||
-                    defenderType.equals("FLYING")||
-                    defenderType.equals("BUG")){
-                        return 2.0;
-                    }else if(defenderType.equals("FIGHTING")||
-                    defenderType.equals("GROUND")){
-                        return .5;
-                    }
-                    return 1;
-                case "GHOST":
-                    if(defenderType.equals("GHOST")){
-                        return 2.0;
-                    }else if(defenderType.equals("NORMAL")||
-                    defenderType.equals("PSYCHIC")){
-                        return 0;
-                    }
-                    return 1;
-                case "DRAGON":
-                    if(defenderType.equals("DRAGON")){
-                        return 2.0;
-                    }
-                    return 1;
-            }
-            return 1.0;
-        }
 
 
 
@@ -752,14 +612,14 @@ public class TreeTraversalAgent
                     opponentScore += aliveBonus + hpRatio * hpWeight;
                 }
             }
-            return myScore - opponentScore;
+            return 1000 * (myScore - opponentScore);
         }
         
 
         //terminal. if out pokemon faints, return 0 or some low number. if enemy faints, return high number
         public double evaluateState(BattleView state) {
             final double hpWeight = 1.0;
-            final double faintedPenalty = 100.0;  // heavy penalty if one of our Pokémon is fainted
+            final double faintedPenalty = 100.0;
             double myScore = 0.0;
             double opponentScore = 0.0;
             
@@ -786,7 +646,7 @@ public class TreeTraversalAgent
                 }
             }
 
-            return 100000 * (myScore - opponentScore);
+            return 1000 * (myScore - opponentScore);
         }
 
 
