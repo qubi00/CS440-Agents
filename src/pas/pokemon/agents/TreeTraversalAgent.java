@@ -459,13 +459,6 @@ public class TreeTraversalAgent
 
 
         public Pair<MoveView, Double> expectimax(TreeNode node, int depth, double alpha, double beta) {
-            //either reached max depth or terminal
-            if(depth == 0){
-                return new Pair<>(node.getMove(), getHPAdvantage(node.getState()));
-            }else if(node.getState().isOver()){
-                return new Pair<>(node.getMove(), evaluateState(node.getState()));
-            }
-        
             int myIdx = getMyTeamIdx();
             int opIdx;
             if(myIdx == 0){
@@ -473,6 +466,32 @@ public class TreeTraversalAgent
             }else{
                 opIdx = 0;
             }
+
+            //either reached max depth or terminal
+            if(depth == 0){
+                double eval = getHPAdvantage(node.getState());
+                if(node.getMove() != null){
+                    PokemonView oppActive = node.getState().getTeamView(opIdx).getActivePokemonView();
+                    String moveType = node.getMove().getType().name();
+                    String oppType1 = oppActive.getCurrentType1().name();
+                    String oppType2 = null;
+                    if(oppActive.getCurrentType2() != null){
+                        oppType2 = oppActive.getCurrentType2().name();
+                    }
+                    double typeAdvantageWeight = 2000.0;
+                    double eff1 = getTypeEffectiveness(moveType, oppType1);
+                    double eff2 = 1;
+                    if(oppType2 != null){
+                        eff2 = getTypeEffectiveness(moveType, oppType2);
+                    }
+                    double bonus = typeAdvantageWeight * (eff1 + eff2 - 1);
+                    eval += bonus;
+                }
+                return new Pair<>(node.getMove(), eval);
+            }else if(node.getState().isOver()){
+                return new Pair<>(node.getMove(), evaluateState(node.getState()));
+            }
+        
 
             if(node.getChildren().isEmpty()){
                 if(node.getType() == NodeType.DETERMINISTIC){
@@ -491,7 +510,25 @@ public class TreeTraversalAgent
             }
 
             if(node.getProbability() < low_prob){
-                return new Pair<>(node.getMove(), getHPAdvantage(node.getState()));
+                double eval = getHPAdvantage(node.getState());
+                if(node.getMove() != null) {
+                    PokemonView oppActive = node.getState().getTeamView(opIdx).getActivePokemonView();
+                    String moveType = node.getMove().getType().name();
+                    String oppType1 = oppActive.getCurrentType1().name();
+                    String oppType2 = null;
+                    if(oppActive.getCurrentType2() != null){
+                        oppType2 = oppActive.getCurrentType2().name();
+                    }
+                    double typeAdvantageWeight = 2000.0;
+                    double eff1 = getTypeEffectiveness(moveType, oppType1);
+                    double eff2 = 1;
+                    if(oppType2 != null){
+                        eff2 = getTypeEffectiveness(moveType, oppType2);
+                    }
+                    double bonus = typeAdvantageWeight * (eff1 + eff2 - 1);
+                    eval += bonus;
+                }
+                return new Pair<>(node.getMove(), eval);
             }
 
             //best/worst depending on node
@@ -553,13 +590,31 @@ public class TreeTraversalAgent
                 case MOVE_ORDER_CHANCE:
                 case MEGA_CHANCE:
                 case POST_TURN: {
+                    //chance node pruning
                     double expectedValue = 0.0;
+                    double totalProb = 0.0;
+                    for(TreeNode child : node.getChildren()){
+                        totalProb += child.getProbability();
+                    }
+                    double remainingProb = totalProb;
                     MoveView expansion = null;
-                    for (TreeNode child : node.getChildren()){
+                    for(TreeNode child : node.getChildren()){
+                        remainingProb -= child.getProbability();
                         Pair<MoveView, Double> childEval = expectimax(child, depth - 1, alpha, beta);
                         expectedValue += child.getProbability() * childEval.getSecond();
-                        if (expansion == null && childEval.getFirst() != null){
+                        if(expansion == null && childEval.getFirst() != null){
                             expansion = childEval.getFirst();
+                        }
+                        if(node.isMax){
+                            if(expectedValue + remainingProb * beta < alpha) {
+                                expectedValue += remainingProb * beta;
+                                break;
+                            }
+                        }else{
+                            if(expectedValue + remainingProb * alpha > beta) {
+                                expectedValue += remainingProb * alpha;
+                                break;
+                            }
                         }
                     }
                     return new Pair<>(expansion, expectedValue);
@@ -575,12 +630,176 @@ public class TreeTraversalAgent
 
         //for heuristic
 
+        public double getTypeEffectiveness(String moveType, String defenderType) {
+            switch(moveType){
+                case "NORMAL":
+                    if(defenderType.equals("ROCK")){
+                        return .5;
+                    }else if(defenderType.equals("GHOST")){
+                        return 0.0;
+                    }
+                    return 1.0;
+                case "FIRE":
+                    if(defenderType.equals("GRASS")||
+                    defenderType.equals("ICE")||
+                    defenderType.equals("BUG")){
+                        return 2.0;
+                    }else if(defenderType.equals("FIRE")||
+                    defenderType.equals("WATER")||
+                    defenderType.equals("ROCK")||
+                    defenderType.equals("DRAGON")){
+                        return .5;
+                    }
+                    return 1.0;
+                case "WATER":
+                    if(defenderType.equals("FIRE")||
+                    defenderType.equals("GROUND")||
+                    defenderType.equals("ROCK")){
+                        return 2.0;
+                    }else if(defenderType.equals("WATER")||
+                    defenderType.equals("GRASS")||
+                    defenderType.equals("DRAGON")){
+                        return .5;
+                    }
+                    return 1.0;
+                case "ELECTRIC":
+                    if(defenderType.equals("WATER")||
+                    defenderType.equals("FLYING")){
+                        return 2.0;
+                    }else if(defenderType.equals("ELECTRIC")||
+                    defenderType.equals("GRASS")||
+                    defenderType.equals("DRAGON")){
+                        return .5;
+                    }else if(defenderType.equals("GROUND")){
+                        return 0;
+                    }
+                    return 1.0;
+                case "GRASS":
+                    if(defenderType.equals("WATER")||
+                    defenderType.equals("GROUND")||
+                    defenderType.equals("ROCK")){
+                        return 2.0;
+                    }else if(defenderType.equals("FIRE")||
+                    defenderType.equals("GRASS")||
+                    defenderType.equals("FLYING")||
+                    defenderType.equals("BUG")||
+                    defenderType.equals("DRAGON")||
+                    defenderType.equals("POISON")){
+                        return .5;
+                    }
+                    return 1.0;
+                case "ICE":
+                    if(defenderType.equals("GRASS")||
+                    defenderType.equals("GROUND")||
+                    defenderType.equals("DRAGON")||
+                    defenderType.equals("FLYING")){
+                        return 2.0;
+                    }else if(defenderType.equals("WATER")||
+                    defenderType.equals("ICE")){
+                        return .5;
+                    }
+                    return 1.0;
+                case "FIGHTING":
+                    if(defenderType.equals("NORMAL")||
+                    defenderType.equals("ICE")||
+                    defenderType.equals("ROCK")){
+                        return 2.0;
+                    }else if(defenderType.equals("POISON")||
+                    defenderType.equals("PSYCHIC")||
+                    defenderType.equals("BUG")||
+                    defenderType.equals("FLYING")){
+                        return .5;
+                    }else if(defenderType.equals("GHOST")){
+                        return 0;
+                    }
+                    return 1.0;
+                case "POISON":
+                    if(defenderType.equals("GRASS")||
+                    defenderType.equals("BUG")){
+                        return 2.0;
+                    }else if(defenderType.equals("POISON")||
+                    defenderType.equals("GROUND")||
+                    defenderType.equals("ROCK")||
+                    defenderType.equals("GHOST")){
+                        return .5;
+                    }
+                    return 1.0;
+                case "GROUND":
+                    if(defenderType.equals("FIRE")||
+                    defenderType.equals("ELECTRIC")||
+                    defenderType.equals("POISON")||
+                    defenderType.equals("ROCK")){
+                        return 2.0;
+                    }else if(defenderType.equals("GRASS")||
+                    defenderType.equals("BUG")){
+                        return .5;
+                    }else if(defenderType.equals("FLYING")){
+                        return 0.0;
+                    }
+                    return 1;
+                case "FLYING":
+                    if(defenderType.equals("GRASS")||
+                    defenderType.equals("FIGHTING")||
+                    defenderType.equals("BUG")){
+                        return 2.0;
+                    }else if(defenderType.equals("ELECTRIC")||
+                    defenderType.equals("ROCK")){
+                        return .5;
+                    }
+                    return 1;
+                case "PSYCHIC":
+                    if(defenderType.equals("FIGHTING")||
+                    defenderType.equals("POISON")){
+                        return 2.0;
+                    }else if(defenderType.equals("PSYCHIC")){
+                        return .5;
+                    }
+                    return 1;
+                case "BUG":
+                    if(defenderType.equals("GRASS")||
+                    defenderType.equals("POISON")||
+                    defenderType.equals("PSYCHIC")){
+                        return 2.0;
+                    }else if(defenderType.equals("FIRE")||
+                    defenderType.equals("FLYING")||
+                    defenderType.equals("GHOST")||
+                    defenderType.equals("FIGHTING")){
+                        return .5;
+                    }
+                    return 1;
+                case "ROCK":
+                    if(defenderType.equals("FIRE")||
+                    defenderType.equals("ICE")||
+                    defenderType.equals("FLYING")||
+                    defenderType.equals("BUG")){
+                        return 2.0;
+                    }else if(defenderType.equals("FIGHTING")||
+                    defenderType.equals("GROUND")){
+                        return .5;
+                    }
+                    return 1;
+                case "GHOST":
+                    if(defenderType.equals("GHOST")){
+                        return 2.0;
+                    }else if(defenderType.equals("NORMAL")||
+                    defenderType.equals("PSYCHIC")){
+                        return 0;
+                    }
+                    return 1;
+                case "DRAGON":
+                    if(defenderType.equals("DRAGON")){
+                        return 2.0;
+                    }
+                    return 1;
+            }
+            return 1.0;
+        }
 
 
         //use as utility if we cant reach a point where a pokemon faints
         public double getHPAdvantage(BattleView state) {
-            TeamView myTeam = state.getTeam1View();
-            TeamView opponentTeam = state.getTeam2View();
+            TeamView myTeam = getMyTeamView(state);
+            TeamView opponentTeam = getOpponentTeamView(state);
 
             boolean myAllFainted = true;
             for (int i = 0; i < myTeam.size(); i++) {
@@ -624,7 +843,7 @@ public class TreeTraversalAgent
                     opponentScore += aliveBonus + hpRatio * hpWeight;
                 }
             }
-            return 1000 * (myScore - opponentScore);
+            return 10000 * (myScore - opponentScore);
         }
         
 
@@ -658,7 +877,7 @@ public class TreeTraversalAgent
                 }
             }
 
-            return 1000 * (myScore - opponentScore);
+            return 10000 * (myScore - opponentScore);
         }
 
 
