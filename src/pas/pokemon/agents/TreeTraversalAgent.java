@@ -250,7 +250,7 @@ public class TreeTraversalAgent
                     break;
                 case NONE:
                     TreeNode nextPhase = new TreeNode(state, this.getMove(), this.moveSet, 1.0, NodeType.DETERMINISTIC, isMax, depth + 1);
-                    if(!state.isOver() && this.depth < 3){
+                    if(!state.isOver() && this.depth < 2){
                         if(isMax){
                             nextPhase.expandDeterministic(1);
                         }else{
@@ -622,7 +622,7 @@ public class TreeTraversalAgent
     {
         super();
         this.maxThinkingTimePerMoveInMS = 180000 * 2; // 6 min/move
-        this.maxDepth = 3; // set this however you want
+        this.maxDepth = 2; // set this however you want
     }
 
     /**
