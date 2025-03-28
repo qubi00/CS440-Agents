@@ -46,8 +46,8 @@ import java.util.concurrent.TimeoutException;
 public class TreeTraversalAgent
     extends Agent
 {
-    public static final double low_prob = 0.1;
-    public static int max_depth = 1;
+    public static final double low_prob = 0.05;
+    public static int max_depth = 2;
 
     public static class TreeNode {
         public enum NodeType{
@@ -444,7 +444,7 @@ public class TreeTraversalAgent
             double bestValue = Double.NEGATIVE_INFINITY;
 
             for (TreeNode child : root.getChildren()) {
-                Pair<MoveView, Double> eval = expectimax(child, maxDepth);
+                Pair<MoveView, Double> eval = expectimax(child, maxDepth, Double.NEGATIVE_INFINITY, Double.POSITIVE_INFINITY);
                 if (eval.getSecond() > bestValue) {
                     bestValue = eval.getSecond();
                     if(child.getMove() != null){
@@ -458,7 +458,7 @@ public class TreeTraversalAgent
         }
 
 
-        public Pair<MoveView, Double> expectimax(TreeNode node, int depth) {
+        public Pair<MoveView, Double> expectimax(TreeNode node, int depth, double alpha, double beta) {
             //either reached max depth or terminal
             if(depth == 0){
                 return new Pair<>(node.getMove(), getHPAdvantage(node.getState()));
@@ -490,6 +490,10 @@ public class TreeTraversalAgent
                 }
             }
 
+            if(node.getProbability() < low_prob){
+                return new Pair<>(node.getMove(), getHPAdvantage(node.getState()));
+            }
+
             //best/worst depending on node
             if(node.getType() == TreeNode.NodeType.DETERMINISTIC){
                 if(node.isMax){
@@ -509,13 +513,17 @@ public class TreeTraversalAgent
                         double best = Double.NEGATIVE_INFINITY;
                         MoveView bestMove = null;
                         for (TreeNode child : node.getChildren()) {
-                            Pair<MoveView, Double> childEval = expectimax(child, depth - 1);
+                            Pair<MoveView, Double> childEval = expectimax(child, depth - 1, alpha, beta);
                             if(childEval.getSecond() > best){
                                 best = childEval.getSecond();
                                 if(child.getMove() != null){
                                     bestMove = child.getMove();
                                 }else{
                                     bestMove = childEval.getFirst();
+                                }
+                                alpha = Math.max(alpha, best);
+                                if(beta <= alpha){
+                                    break;
                                 }
                             }
                         }
@@ -525,13 +533,17 @@ public class TreeTraversalAgent
                         double worst = Double.POSITIVE_INFINITY;
                         MoveView worstMove = null;
                         for (TreeNode child : node.getChildren()) {
-                            Pair<MoveView, Double> childEval = expectimax(child, depth - 1);
+                            Pair<MoveView, Double> childEval = expectimax(child, depth - 1, alpha, beta);
                             if(childEval.getSecond() < worst){
                                 worst = childEval.getSecond();
                                 if(child.getMove() != null){
                                     worstMove = child.getMove();
                                 }else{
                                     worstMove = childEval.getFirst();
+                                }
+                                beta = Math.min(beta, worst);
+                                if(beta <= alpha){
+                                    break;
                                 }
                             }
                         }
@@ -544,7 +556,7 @@ public class TreeTraversalAgent
                     double expectedValue = 0.0;
                     MoveView expansion = null;
                     for (TreeNode child : node.getChildren()){
-                        Pair<MoveView, Double> childEval = expectimax(child, depth - 1);
+                        Pair<MoveView, Double> childEval = expectimax(child, depth - 1, alpha, beta);
                         expectedValue += child.getProbability() * childEval.getSecond();
                         if (expansion == null && childEval.getFirst() != null){
                             expansion = childEval.getFirst();
@@ -670,7 +682,7 @@ public class TreeTraversalAgent
     {
         super();
         this.maxThinkingTimePerMoveInMS = 180000 * 2; // 6 min/move
-        this.maxDepth = 1; // set this however you want
+        this.maxDepth = 2; // set this however you want
     }
 
     /**
