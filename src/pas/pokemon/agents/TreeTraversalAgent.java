@@ -46,6 +46,9 @@ import java.util.concurrent.TimeoutException;
 public class TreeTraversalAgent
     extends Agent
 {
+    public static final double low_prob = 0.01;
+    public static int max_depth = 2;
+
     public static class TreeNode {
         public enum NodeType{
             MOVE_ORDER_CHANCE,
@@ -82,8 +85,15 @@ public class TreeTraversalAgent
         public List<TreeNode> getChildren() {return children;}
         public NodeType getType() {return type;}
 
+        private boolean atMaxDepth() {
+            return (this.depth >= max_depth);
+        }
 
         public void expandMoveOrder(BattleView state){
+            if(atMaxDepth()){
+                return;
+            }
+
             PokemonView p1 = state.getTeam1View().getActivePokemonView();
             PokemonView p2 = state.getTeam2View().getActivePokemonView();
 
@@ -139,6 +149,9 @@ public class TreeTraversalAgent
     
         //expand all possible moves for max/min nodes
         public void expandDeterministic(int teamIdx) {
+            if(atMaxDepth()){
+                return;
+            }
             this.isMax = (teamIdx == 0);
             
             PokemonView p1 = state.getTeam1View().getActivePokemonView();
@@ -205,6 +218,9 @@ public class TreeTraversalAgent
 
 
         public void expandMoveResolution(){
+            if(atMaxDepth()){
+                return;
+            }
             //check this, sometimes not first
             int teamIdx = 0;
             if(isMax){
@@ -215,38 +231,74 @@ public class TreeTraversalAgent
             
             PokemonView pokemon = state.getTeamView(teamIdx).getActivePokemonView();
             if(pokemon.hasFainted()){
-                TreeNode switchBranch = new TreeNode(state, this.getMove(), null, 
-                    1, NodeType.POST_TURN, isMax, depth + 1);
-                switchBranch.expandPostTurn();
-                children.add(switchBranch);
+                if(!pokemon.getFlag(Flag.TRAPPED)){
+                    TreeNode switchBranch = new TreeNode(state, this.getMove(), null, 
+                        1.0, NodeType.POST_TURN, isMax, depth + 1);
+                    switchBranch.expandPostTurn();
+                    children.add(switchBranch);
+                }
                 return;
             }
 
             switch(pokemon.getNonVolatileStatus()){
                 case SLEEP:
-                case PARALYSIS:
-                case FREEZE:
-                    double successProb = 0.7;
-                    double failProb = 0.3;
-                    //success
-                    TreeNode successBranch = new TreeNode(state, this.getMove(), this.moveSet, successProb, NodeType.MEGA_CHANCE, isMax, depth+1);
+                    double wakeProb = 0.098;
+                    double sleepProb = 1.0 - wakeProb;
+                    
+                    TreeNode wakeBranch = new TreeNode(state, this.getMove(), this.moveSet, wakeProb, NodeType.MEGA_CHANCE, isMax, depth+1);
                     if(isMax){
-                        successBranch.expandDeterministic(1);
-                    }else{
-                        successBranch.expandDeterministic(0);
+                        wakeBranch.expandDeterministic(1);
+                    } else {
+                        wakeBranch.expandDeterministic(0);
                     }
-
-                    //fail
-                    TreeNode failBranch = new TreeNode(state, this.getMove(), this.moveSet, failProb, NodeType.POST_TURN, isMax, depth+1);
-                    failBranch.expandPostTurn();
-                    children.add(successBranch);
-                    children.add(failBranch);
+                    
+                    TreeNode sleepBranch = new TreeNode(state, this.getMove(), this.moveSet, sleepProb, NodeType.POST_TURN, isMax, depth+1);
+                    sleepBranch.expandPostTurn();
+                    children.add(wakeBranch);
+                    children.add(sleepBranch);
+                    break;
+                case PARALYSIS:
+                    double moveProb = 0.75;
+                    double loseProb = 1.0 - moveProb;
+                    TreeNode moveBranch = new TreeNode(state, this.getMove(), this.moveSet, moveProb, NodeType.MEGA_CHANCE, isMax, depth+1);
+                    if(isMax){
+                        moveBranch.expandDeterministic(1);
+                    } else {
+                        moveBranch.expandDeterministic(0);
+                    }
+                    TreeNode loseBranch = new TreeNode(state, this.getMove(), this.moveSet, loseProb, NodeType.POST_TURN, isMax, depth+1);
+                    loseBranch.expandPostTurn();
+                    children.add(moveBranch);
+                    children.add(loseBranch);
+                    break;
+                case FREEZE:
+                    double thawProb = 0.098;
+                    double remainProb = 1.0 - thawProb;
+                    TreeNode thawBranch = new TreeNode(state, this.getMove(), this.moveSet, thawProb, NodeType.MEGA_CHANCE, isMax, depth+1);
+                    if(isMax){
+                        thawBranch.expandDeterministic(1);
+                    } else {
+                        thawBranch.expandDeterministic(0);
+                    }
+                    TreeNode frozenBranch = new TreeNode(state, this.getMove(), this.moveSet, remainProb, NodeType.POST_TURN, isMax, depth+1);
+                    frozenBranch.expandPostTurn();
+                    children.add(thawBranch);
+                    children.add(frozenBranch);
                     break;
                 case POISON:
+                    TreeNode poisonBranch = new TreeNode(state, this.getMove(), this.moveSet, 1.0, NodeType.POST_TURN, isMax, depth+1);
+                    poisonBranch.expandPostTurn();
+                    children.add(poisonBranch);
                     break;
                 case BURN:
+                    TreeNode burnBranch = new TreeNode(state, this.getMove(), this.moveSet, 1.0, NodeType.POST_TURN, isMax, depth+1);
+                    burnBranch.expandPostTurn();
+                    children.add(burnBranch);
                     break;
                 case TOXIC:
+                    TreeNode toxicBranch = new TreeNode(state, this.getMove(), this.moveSet, 1.0, NodeType.POST_TURN, isMax, depth+1);
+                    toxicBranch.expandPostTurn();
+                    children.add(toxicBranch);
                     break;
                 case NONE:
                     TreeNode nextPhase = new TreeNode(state, this.getMove(), this.moveSet, 1.0, NodeType.DETERMINISTIC, isMax, depth + 1);
@@ -287,12 +339,38 @@ public class TreeTraversalAgent
                     outcomeBranch.expandPostTurn();
                     children.add(outcomeBranch);
                 }
-        
+            }else if(pokemon.getFlag(Flag.SEEDED)){
+                    TreeNode seedBranch = new TreeNode(state, this.getMove(), this.moveSet, 1.0, NodeType.POST_TURN, isMax, depth+1);
+                    seedBranch.expandPostTurn();
+                    children.add(seedBranch);
+            }else if(pokemon.getFlag(Flag.FLINCHED)){
+                TreeNode flinchBranch = new TreeNode(state, this.getMove(), this.moveSet, 1.0, NodeType.POST_TURN, isMax, depth+1);
+                flinchBranch.expandPostTurn();
+                children.add(flinchBranch);
+            }else if(pokemon.getFlag(Flag.FOCUS_ENERGY)){
+                TreeNode focusEnergyBranch = new TreeNode(state, this.getMove(), this.moveSet, 1.0, NodeType.DETERMINISTIC, isMax, depth+1);
+                if(isMax){
+                    focusEnergyBranch.expandDeterministic(1);
+                } else {
+                    focusEnergyBranch.expandDeterministic(0);
+                }
+                children.add(focusEnergyBranch);
+            }else if(pokemon.getFlag(Flag.TRAPPED)) {
+                TreeNode trappedBranch = new TreeNode(state, this.getMove(), this.moveSet, 1.0, NodeType.DETERMINISTIC, isMax, depth+1);
+                if(isMax){
+                    trappedBranch.expandDeterministic(1);
+                } else {
+                    trappedBranch.expandDeterministic(0);
+                }
+                children.add(trappedBranch);
             }
         }
 
 
         public void expandPostTurn(){
+            if(atMaxDepth()){
+                return;
+            }
             List<BattleView> postTurnStates = this.getState().applyPostTurnConditions();
             //terminal
             if(postTurnStates.isEmpty() || this.getState().isOver()){
@@ -388,6 +466,19 @@ public class TreeTraversalAgent
                 }
             }
 
+            //best/worst depending on node
+            if(node.getType() == TreeNode.NodeType.DETERMINISTIC){
+                if(node.isMax){
+                    Collections.sort(node.getChildren(), (a, b) ->
+                        Double.compare(getHPAdvantage(b.getState()), getHPAdvantage(a.getState()))
+                    );
+                }else{
+                    Collections.sort(node.getChildren(), (a, b) ->
+                        Double.compare(getHPAdvantage(a.getState()), getHPAdvantage(b.getState()))
+                    );
+                }
+            }
+
             switch(node.getType()){
                 case DETERMINISTIC:
                     if(node.isMax){
@@ -451,23 +542,85 @@ public class TreeTraversalAgent
             switch(moveType){
                 case "NORMAL":
                     if(defenderType.equals("ROCK")){
-                        return 1.0/2;
+                        return .5;
                     }else if(defenderType.equals("GHOST")){
                         return 0.0;
                     }
                     return 1.0;
                 case "FIRE":
-                    break;
+                    if(defenderType.equals("GRASS")||
+                    defenderType.equals("ICE")||
+                    defenderType.equals("BUG")){
+                        return 2.0;
+                    }else if(defenderType.equals("FIRE")||
+                    defenderType.equals("WATER")||
+                    defenderType.equals("ROCK")||
+                    defenderType.equals("DRAGON")){
+                        return .5;
+                    }
+                    return 1.0;
                 case "WATER":
-                    break;
+                    if(defenderType.equals("FIRE")||
+                    defenderType.equals("GROUND")||
+                    defenderType.equals("ROCK")){
+                        return 2.0;
+                    }else if(defenderType.equals("WATER")||
+                    defenderType.equals("GRASS")||
+                    defenderType.equals("DRAGON")){
+                        return .5;
+                    }
+                    return 1.0;
                 case "ELECTRIC":
-                    break;
+                    if(defenderType.equals("WATER")||
+                    defenderType.equals("FLYING")){
+                        return 2.0;
+                    }else if(defenderType.equals("ELECTRIC")||
+                    defenderType.equals("GRASS")||
+                    defenderType.equals("DRAGON")){
+                        return .5;
+                    }else if(defenderType.equals("GROUND")){
+                        return 0;
+                    }
+                    return 1.0;
                 case "GRASS":
-                    break;
+                    if(defenderType.equals("WATER")||
+                    defenderType.equals("GROUND")||
+                    defenderType.equals("ROCK")){
+                        return 2.0;
+                    }else if(defenderType.equals("FIRE")||
+                    defenderType.equals("GRASS")||
+                    defenderType.equals("FLYING")||
+                    defenderType.equals("BUG")||
+                    defenderType.equals("DRAGON")||
+                    defenderType.equals("POISON")){
+                        return .5;
+                    }
+                    return 1.0;
                 case "ICE":
-                    break;
+                    if(defenderType.equals("GRASS")||
+                    defenderType.equals("GROUND")||
+                    defenderType.equals("DRAGON")||
+                    defenderType.equals("FLYING")){
+                        return 2.0;
+                    }else if(defenderType.equals("WATER")||
+                    defenderType.equals("ICE")){
+                        return .5;
+                    }
+                    return 1.0;
                 case "FIGHTING":
-                    break;
+                    if(defenderType.equals("NORMAL")||
+                    defenderType.equals("ICE")||
+                    defenderType.equals("ROCK")){
+                        return 2.0;
+                    }else if(defenderType.equals("POISON")||
+                    defenderType.equals("PSYCHIC")||
+                    defenderType.equals("BUG")||
+                    defenderType.equals("FLYING")){
+                        return .5;
+                    }else if(defenderType.equals("GHOST")){
+                        return 0;
+                    }
+                    return 1.0;
                 case "POISON":
                     if(defenderType.equals("GRASS")||
                     defenderType.equals("BUG")){
@@ -491,12 +644,37 @@ public class TreeTraversalAgent
                     }else if(defenderType.equals("FLYING")){
                         return 0.0;
                     }
+                    return 1;
                 case "FLYING":
-                    break;
+                    if(defenderType.equals("GRASS")||
+                    defenderType.equals("FIGHTING")||
+                    defenderType.equals("BUG")){
+                        return 2.0;
+                    }else if(defenderType.equals("ELECTRIC")||
+                    defenderType.equals("ROCK")){
+                        return .5;
+                    }
+                    return 1;
                 case "PSYCHIC":
-                    break;
+                    if(defenderType.equals("FIGHTING")||
+                    defenderType.equals("POISON")){
+                        return 2.0;
+                    }else if(defenderType.equals("PSYCHIC")){
+                        return .5;
+                    }
+                    return 1;
                 case "BUG":
-                    break;
+                    if(defenderType.equals("GRASS")||
+                    defenderType.equals("POISON")||
+                    defenderType.equals("PSYCHIC")){
+                        return 2.0;
+                    }else if(defenderType.equals("FIRE")||
+                    defenderType.equals("FLYING")||
+                    defenderType.equals("GHOST")||
+                    defenderType.equals("FIGHTING")){
+                        return .5;
+                    }
+                    return 1;
                 case "ROCK":
                     if(defenderType.equals("FIRE")||
                     defenderType.equals("ICE")||
@@ -507,10 +685,20 @@ public class TreeTraversalAgent
                     defenderType.equals("GROUND")){
                         return .5;
                     }
+                    return 1;
                 case "GHOST":
-                    break;
+                    if(defenderType.equals("GHOST")){
+                        return 2.0;
+                    }else if(defenderType.equals("NORMAL")||
+                    defenderType.equals("PSYCHIC")){
+                        return 0;
+                    }
+                    return 1;
                 case "DRAGON":
-                    break;
+                    if(defenderType.equals("DRAGON")){
+                        return 2.0;
+                    }
+                    return 1;
             }
             return 1.0;
         }
@@ -622,7 +810,7 @@ public class TreeTraversalAgent
     {
         super();
         this.maxThinkingTimePerMoveInMS = 180000 * 2; // 6 min/move
-        this.maxDepth = 2; // set this however you want
+        this.maxDepth = 1; // set this however you want
     }
 
     /**
