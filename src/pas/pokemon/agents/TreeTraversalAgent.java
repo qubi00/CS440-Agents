@@ -8,6 +8,7 @@ import edu.bu.pas.pokemon.core.Battle.BattleView;
 import edu.bu.pas.pokemon.core.Team;
 import edu.bu.pas.pokemon.core.Team.TeamView;
 import edu.bu.pas.pokemon.core.Move;
+import edu.bu.pas.pokemon.core.SwitchMove;
 import edu.bu.pas.pokemon.core.Move.MoveView;
 import edu.bu.pas.pokemon.utils.Pair;
 import src.pas.pokemon.agents.TreeTraversalAgent.TreeNode.NodeType;
@@ -213,6 +214,13 @@ public class TreeTraversalAgent
             }
             
             PokemonView pokemon = state.getTeamView(teamIdx).getActivePokemonView();
+            if(pokemon.hasFainted()){
+                TreeNode switchBranch = new TreeNode(state, this.getMove(), null, 
+                    1, NodeType.POST_TURN, isMax, depth + 1);
+                switchBranch.expandPostTurn();
+                children.add(switchBranch);
+                return;
+            }
 
             switch(pokemon.getNonVolatileStatus()){
                 case SLEEP:
@@ -285,16 +293,18 @@ public class TreeTraversalAgent
 
 
         public void expandPostTurn(){
-            this.getState().applyPostTurnConditions();
+            List<BattleView> postTurnStates = this.getState().applyPostTurnConditions();
             //terminal
-            if(this.getState().isOver()){
+            if(postTurnStates.isEmpty() || this.getState().isOver()){
                 return;
             }else{
                 //not done, turn 2, etc.
-                TreeNode moveOrderNode = new TreeNode(state, null, null, 1.0, 
-                NodeType.MOVE_ORDER_CHANCE, this.isMax, depth+1);
-                moveOrderNode.expandMoveOrder(state);
-                children.add(moveOrderNode);
+                for(BattleView newState : postTurnStates) {
+                    TreeNode moveOrderNode = new TreeNode(newState, null, null, 1.0, 
+                        NodeType.MOVE_ORDER_CHANCE, this.isMax, depth+1);
+                    moveOrderNode.expandMoveOrder(newState);
+                    children.add(moveOrderNode);
+                }
             }
         }
     
