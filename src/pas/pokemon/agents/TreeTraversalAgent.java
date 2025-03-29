@@ -48,7 +48,7 @@ public class TreeTraversalAgent
     extends Agent
 {
     public static final double low_prob = 0.01;
-    public static int max_depth = 3;
+    public static int max_depth = 2;
 
     public static class MoveCache {
         public enum BoundType {
@@ -142,7 +142,7 @@ public class TreeTraversalAgent
                 List<Pair<Double, BattleView>> outcomes = move.getPotentialEffects(rootView, myIdx, opIdx);
                 for(Pair<Double, BattleView> outcome : outcomes) {
                     TreeNode child = new TreeNode(outcome.getSecond(), move, outcome.getFirst(), false);
-                    moveValue += outcome.getFirst() * expectimax(child, depth - 1);
+                    moveValue += outcome.getFirst() * expectimax(child, depth - 1, Double.NEGATIVE_INFINITY, Double.POSITIVE_INFINITY);
                 }
                 if(moveValue > bestValue){
                     bestValue = moveValue;
@@ -153,7 +153,7 @@ public class TreeTraversalAgent
         }
 
 
-        public double expectimax(TreeNode node, int depth) {
+        public double expectimax(TreeNode node, int depth, double alpha, double beta) {
             int myIdx = getMyTeamIdx();
             int opIdx;
             if(myIdx == 0){
@@ -179,27 +179,41 @@ public class TreeTraversalAgent
                     List<Pair<Double, BattleView>> outcomes = move.getPotentialEffects(node.state, myIdx, opIdx);
                     for(Pair<Double, BattleView> outcome : outcomes){
                         TreeNode child = new TreeNode(outcome.getSecond(), move, outcome.getFirst(), false);
-                        value += outcome.getFirst() * expectimax(child, depth - 1);
+                        value += outcome.getFirst() * expectimax(child, depth - 1, alpha, beta);
                     }
                     best = Math.max(best, value);
+                    alpha = Math.max(alpha, best);
+                    if(alpha >= beta){
+                        break;
+                    }
                 }
                 return best;
             }else{
                 double expected = 0.0;
                 PokemonView oppActive = node.state.getTeamView(opIdx).getActivePokemonView();
                 List<MoveView> moves = oppActive.getAvailableMoves();
-                if(moves.isEmpty()){
+                int n = moves.size();
+                if(n == 0){
                     return evaluateState(node.state);
                 }
-                //average outcome(should do min too to check)
-                for(MoveView move : moves){
+                
+                for(int i = 0; i < n; i++){
+                    MoveView move = moves.get(i);
                     double value = 0.0;
                     List<Pair<Double, BattleView>> outcomes = move.getPotentialEffects(node.state, opIdx, myIdx);
-                    for (Pair<Double, BattleView> outcome : outcomes) {
+                    for(Pair<Double, BattleView> outcome : outcomes){
                         TreeNode child = new TreeNode(outcome.getSecond(), move, outcome.getFirst(), true);
-                        value += outcome.getFirst() * expectimax(child, depth - 1);
+                        value += outcome.getFirst() * expectimax(child, depth - 1, alpha, beta);
                     }
-                    expected += value;
+                    double weighted = value / n;
+                    expected += weighted;
+                    
+                    //max possible contribution
+                    int remaining = n - i - 1;
+                    double maxPossible = expected + remaining * beta / n;
+                    if(maxPossible < alpha){
+                        break;
+                    }
                 }
                 return expected;
             }
