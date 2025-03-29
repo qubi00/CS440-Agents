@@ -95,6 +95,8 @@ public class TreeTraversalAgent
         implements Callable<Pair<MoveView, Long> >  // so this object can be run in a background thread
 	{
 
+        private Map<BattleView, MoveCache> moveCache = new HashMap<>();
+
 		private final BattleView rootView;
         private final int maxDepth;
         private final int myTeamIdx;
@@ -162,10 +164,32 @@ public class TreeTraversalAgent
                 opIdx = 0;
             }
 
-            if(depth == 0 || node.state.isOver()){
-                return evaluateState(node.state);
+            if (moveCache.containsKey(node.getState())) {
+                MoveCache entry = moveCache.get(node.getState());
+                if (entry.depth >= depth) {
+                    switch(entry.boundType) {
+                        case EXACT:
+                            return entry.value;
+                        case LOWER_BOUND:
+                            alpha = Math.max(alpha, entry.value);
+                            break;
+                        case UPPER_BOUND:
+                            beta = Math.min(beta, entry.value);
+                            break;
+                    }
+                    if (alpha >= beta) {
+                        return entry.value;
+                    }
+                }
             }
 
+            if(depth == 0 || node.getState().isOver()){
+                double eval = evaluateState(node.getState());
+                moveCache.put(node.getState(), new MoveCache(depth, node.getMove(), eval, MoveCache.BoundType.EXACT));
+                return eval;
+            }
+
+            double result;
             if(node.isMax){
                 //max score
                 double best = Double.NEGATIVE_INFINITY;
@@ -187,7 +211,7 @@ public class TreeTraversalAgent
                         break;
                     }
                 }
-                return best;
+                result = best;
             }else{
                 double expected = 0.0;
                 PokemonView oppActive = node.state.getTeamView(opIdx).getActivePokemonView();
@@ -215,8 +239,19 @@ public class TreeTraversalAgent
                         break;
                     }
                 }
-                return expected;
+                result = expected;
             }
+            MoveCache.BoundType boundType;
+            if(result <= alpha) {
+                boundType = MoveCache.BoundType.UPPER_BOUND;
+            } else if(result >= beta) {
+                boundType = MoveCache.BoundType.LOWER_BOUND;
+            } else {
+                boundType = MoveCache.BoundType.EXACT;
+            }
+            moveCache.put(node.getState(), new MoveCache(depth, node.getMove(), result, boundType));
+
+            return result;
         }
 
 
