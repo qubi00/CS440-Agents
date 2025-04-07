@@ -53,7 +53,7 @@ public class TetrisQAgent
         // in this example, the input to the neural network is the
         // image of the board unrolled into a giant vector
         final int numPixelsInImage = Board.NUM_ROWS * Board.NUM_COLS;
-        final int numFeatures = Board.NUM_COLS + 3;
+        final int numFeatures = numPixelsInImage + 3;
         final int hiddenDim1 = 64;
         final int hiddenDim2 = 32;
         final int outDim = 1;
@@ -346,8 +346,13 @@ public class TetrisQAgent
         double clearedLinesReward = clearedLines * 100;
 
         Matrix boardImage;
+        List<Mino> finalMinos = game.getFinalMinoPositions();
+        if(finalMinos == null || finalMinos.isEmpty()){
+            return scoreReward;
+        }
+        Mino lastPlaced = finalMinos.get(finalMinos.size() - 1);
         try {
-            boardImage = game.getGrayscaleImage(null);
+            boardImage = game.getGrayscaleImage(lastPlaced);
         } catch (Exception e) {
             e.printStackTrace();
             return scoreReward;
