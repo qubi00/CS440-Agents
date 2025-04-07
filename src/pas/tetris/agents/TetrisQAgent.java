@@ -35,6 +35,8 @@ public class TetrisQAgent
 
     public static final double EXPLORATION_PROB = 0.05;
     public static int FEATURE_COUNT = 0;
+    private static final int RECENT_WINDOW = 50;
+    private List<Double> recentRewards = new ArrayList<>();
 
     private Random random;
 
@@ -218,6 +220,52 @@ public class TetrisQAgent
         return featureMatrix;
     }
 
+
+    /*
+     * This method adds the most recent 50 rewards. Acts as a sliding window,
+     * where only the most recent 50 will be considered. Currently anything
+     * before 50 will not be considered.
+     * 
+     * Note: Could maybe do EWMA
+     */
+    public void addReward(double reward){
+        recentRewards.add(reward);
+        if(recentRewards.size() > RECENT_WINDOW){
+            recentRewards.remove(0);
+        }
+    }
+
+
+    /*
+     * This method gets the average reward within the reward window.
+     */
+    private double getRecentAverageReward(){
+        if(recentRewards.isEmpty()){
+            return 0;
+        }
+        double sum = 0;
+        for(Double r : recentRewards){
+            sum += r;
+        }
+        return sum / recentRewards.size();
+    }
+
+
+    private double getAdaptiveExploreProb(long currentGameCount, double recentAverageReward) {
+        double baseProb = EXPLORATION_PROB;
+        //if average reward is low, we should boost exploration, otherwise lower it
+        double rewardFactor = 1;
+        if(recentAverageReward < 50){
+            rewardFactor = 1.5;
+        }else{
+            rewardFactor = 1;
+        }
+        //prob decays as more games are played
+        double decayedProb = baseProb * rewardFactor / (1.0 + 0.001 * currentGameCount);
+        return decayedProb;
+    }
+
+
     /**
      * This method is used to decide if we should follow our current policy
      * (i.e. our q-function), or if we should ignore it and take a random action
@@ -238,12 +286,11 @@ public class TetrisQAgent
                                  final GameCounter gameCounter)
     {
         // System.out.println("cycleIdx=" + gameCounter.getCurrentCycleIdx() + "\tgameIdx=" + gameCounter.getCurrentGameIdx());
-        double baseExploreProb = EXPLORATION_PROB;
         long currentGameCount = gameCounter.getCurrentGameIdx();
-        //prob decays as more games are played
-        double decayedExploreProb = baseExploreProb / (1.0 + 0.001 * currentGameCount);
+        double recentAverageReward = getRecentAverageReward();
+        double adaptiveProb = getAdaptiveExploreProb(currentGameCount, recentAverageReward);
 
-        return this.getRandom().nextDouble() <= decayedExploreProb;
+        return this.getRandom().nextDouble() <= adaptiveProb;
     }
 
     /**
@@ -262,6 +309,11 @@ public class TetrisQAgent
         int numPositions = finalPositions.size();
         double[] weights = new double[numPositions];
         double totalWeight = 0.0;
+
+        double maxRarity = Double.NEGATIVE_INFINITY;
+        double minRarity = Double.POSITIVE_INFINITY;
+
+        double[] rarityScores = new double[numPositions];
         
         for(int i = 0; i < numPositions; i++){
             Mino move = finalPositions.get(i);
@@ -270,8 +322,10 @@ public class TetrisQAgent
                 boardImage = game.getGrayscaleImage(move);
             } catch (Exception e) {
                 e.printStackTrace();
+                rarityScores[i] = Double.POSITIVE_INFINITY; //bad move
                 continue;
             }
+
             int rows = boardImage.getShape().getNumRows();
             int cols = boardImage.getShape().getNumCols();
             
@@ -300,9 +354,29 @@ public class TetrisQAgent
                 holes += columnHoles;
             }
             
-            //higher rarity score means rarer to choose that move
             double rarityScore = totalHeight + holes;
-            double weight = rarityScore + 1;
+            rarityScores[i] = rarityScore;
+            if(rarityScore > maxRarity){
+                maxRarity = rarityScore;
+            }
+            if(rarityScore < minRarity){
+                minRarity = rarityScore;
+            }
+        }
+
+        for(int i = 0; i < numPositions; i++){
+            double normalizedRarity;
+            if(maxRarity == minRarity){
+                normalizedRarity = 0.5;
+            }else{
+                normalizedRarity = (rarityScores[i] - minRarity) / (maxRarity - minRarity); //0 is best, 1 is worst
+            }
+    
+            //lower total height and holes mean higher weight
+            //noise helps boost the chance of a rare/bad move
+            double explorationNoise = this.getRandom().nextDouble();
+            double weight = (1.0 - normalizedRarity) + 0.3 * explorationNoise;
+    
             weights[i] = weight;
             totalWeight += weight;
         }
