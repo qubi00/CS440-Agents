@@ -324,7 +324,69 @@ public class TetrisQAgent
     @Override
     public double getReward(final GameView game)
     {
-        return game.getScoreThisTurn();
+        double scoreReward = game.getScoreThisTurn();
+
+        int clearedLines = 0;
+        Board board = game.getBoard();
+        int rows = board.NUM_ROWS;
+        int cols = board.NUM_COLS;
+    
+        for(int row = 0; row < rows; row++){
+            boolean fullRow = true;
+            for(int col = 0; col < cols; col++){
+                if(!board.isCoordinateOccupied(col, row)){
+                    fullRow = false;
+                    break;
+                }
+            }
+            if(fullRow){
+                clearedLines++;
+            }
+        }
+        double clearedLinesReward = clearedLines * 100;
+
+        Matrix boardImage;
+        try {
+            boardImage = game.getGrayscaleImage(null);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return scoreReward;
+        }
+        
+
+        double totalHeight = 0.0;
+        double holes = 0.0;
+        
+        for(int col = 0; col < cols; col++){
+            boolean blockFound = false;
+            int colHeight = 0;
+            int columnHoles = 0;
+
+            for(int row = 0; row < rows; row++){
+                double cellValue = boardImage.get(row, col);
+                
+                if(cellValue >= 0.5){
+                    if(!blockFound){
+                        colHeight = rows - row;
+                        blockFound = true;
+                    }
+                }else{
+                    if(blockFound){
+                        columnHoles++;
+                    }
+                }
+            }
+            totalHeight += colHeight;
+            holes += columnHoles;
+        }
+        
+        //penalties for high stack and holes
+        double heightPenalty = totalHeight * 0.5;
+        double holesPenalty = holes * 10;
+
+        double reward = scoreReward + clearedLinesReward - heightPenalty - holesPenalty;
+
+        return reward;
     }
 
 }
