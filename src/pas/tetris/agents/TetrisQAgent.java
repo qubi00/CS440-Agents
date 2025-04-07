@@ -42,7 +42,7 @@ public class TetrisQAgent
     public TetrisQAgent(String name)
     {
         super(name);
-        this.random = new Random(12345); // optional to have a seed
+        this.random = new Random(); // optional to have a seed
     }
 
     public Random getRandom() { return this.random; }
