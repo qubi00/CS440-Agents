@@ -479,23 +479,27 @@ public class TetrisQAgent
             }
         }
         double clearedLinesReward = clearedLines * 100;
+        if(clearedLines == 4){ //tetris
+            clearedLinesReward += 200;
+        }
 
         Matrix boardImage;
         List<Mino> finalMinos = game.getFinalMinoPositions();
         if(finalMinos == null || finalMinos.isEmpty()){
-            return scoreReward;
+            return scoreReward + clearedLinesReward;
         }
         Mino lastPlaced = finalMinos.get(finalMinos.size() - 1);
         try {
             boardImage = game.getGrayscaleImage(lastPlaced);
         } catch (Exception e) {
             e.printStackTrace();
-            return scoreReward;
+            return scoreReward + clearedLinesReward;
         }
         
 
         double totalHeight = 0.0;
         double holes = 0.0;
+        double[] columnHeights = new double[cols];
         
         for(int col = 0; col < cols; col++){
             boolean blockFound = false;
@@ -516,15 +520,29 @@ public class TetrisQAgent
                     }
                 }
             }
+            columnHeights[col] = colHeight;
             totalHeight += colHeight;
             holes += columnHoles;
         }
+
+        double bumpiness = 0.0;
+        for(int col = 0; col < cols - 1; col++){
+            bumpiness += Math.abs(columnHeights[col] - columnHeights[col + 1]);
+        }
         
         //penalties for high stack and holes
-        double heightPenalty = totalHeight * 0.5;
-        double holesPenalty = holes * 10;
+        double heightPenalty = totalHeight * .5;
+        double holesPenalty = holes * 15;
+        double bumpinessPenalty = bumpiness * .5;
 
-        double reward = scoreReward + clearedLinesReward - heightPenalty - holesPenalty;
+        boolean isGameOver = game.didAgentLose();
+        double terminalPenalty = 0;
+        if(isGameOver){
+            terminalPenalty = -1000;
+        }
+
+        double reward = scoreReward + clearedLinesReward - heightPenalty 
+        - holesPenalty - bumpinessPenalty + terminalPenalty;
 
         return reward;
     }
