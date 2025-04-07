@@ -177,7 +177,12 @@ public class TetrisQAgent
                                  final GameCounter gameCounter)
     {
         // System.out.println("cycleIdx=" + gameCounter.getCurrentCycleIdx() + "\tgameIdx=" + gameCounter.getCurrentGameIdx());
-        return this.getRandom().nextDouble() <= EXPLORATION_PROB;
+        double baseExploreProb = EXPLORATION_PROB;
+        long currentGameCount = gameCounter.getCurrentGameIdx();
+        //prob decays as more games are played
+        double decayedExploreProb = baseExploreProb / (1.0 + 0.001 * currentGameCount);
+
+        return this.getRandom().nextDouble() <= decayedExploreProb;
     }
 
     /**
@@ -192,8 +197,67 @@ public class TetrisQAgent
     @Override
     public Mino getExplorationMove(final GameView game)
     {
-        int randIdx = this.getRandom().nextInt(game.getFinalMinoPositions().size());
-        return game.getFinalMinoPositions().get(randIdx);
+        List<Mino> finalPositions = game.getFinalMinoPositions();
+        int numPositions = finalPositions.size();
+        double[] weights = new double[numPositions];
+        double totalWeight = 0.0;
+        
+        for(int i = 0; i < numPositions; i++){
+            Mino move = finalPositions.get(i);
+            Matrix boardImage;
+            try {
+                boardImage = game.getGrayscaleImage(move);
+            } catch (Exception e) {
+                e.printStackTrace();
+                continue;
+            }
+            int rows = boardImage.getShape().getNumRows();
+            int cols = boardImage.getShape().getNumCols();
+            
+            double totalHeight = 0.0;
+            double holes = 0.0;
+            for(int col = 0; col < cols; col++){
+                boolean blockFound = false;
+                int colHeight = 0;
+                int columnHoles = 0;
+
+                for(int row = 0; row < rows; row++){
+                    double cellValue = boardImage.get(row, col);
+    
+                    if(cellValue >= 0.5){ 
+                        if(!blockFound){
+                            colHeight = rows - row;
+                            blockFound = true;
+                        }
+                    }else{
+                        if(blockFound){
+                            columnHoles++;
+                        }
+                    }
+                }
+                totalHeight += colHeight;
+                holes += columnHoles;
+            }
+            
+            //higher rarity score means rarer to choose that move
+            double rarityScore = totalHeight + holes;
+            double weight = rarityScore + 1;
+            weights[i] = weight;
+            totalWeight += weight;
+        }
+
+        double r = this.getRandom().nextDouble() * totalWeight;
+        double sum = 0.0;
+        int chosenIdx = 0;
+        for(int i = 0; i < weights.length; i++){
+            sum += weights[i];
+            if(r <= sum){
+                chosenIdx = i;
+                break;
+            }
+        }
+
+        return game.getFinalMinoPositions().get(chosenIdx);
     }
 
     /**
