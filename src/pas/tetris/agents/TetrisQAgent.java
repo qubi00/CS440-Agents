@@ -1,11 +1,13 @@
 package src.pas.tetris.agents;
 
 
+import java.util.ArrayList;
 // SYSTEM IMPORTS
 import java.util.Iterator;
 import java.util.List;
 import java.util.Random;
 
+import org.junit.experimental.max.MaxCore;
 
 // JAVA PROJECT IMPORTS
 import edu.bu.pas.tetris.agents.QAgent;
@@ -90,7 +92,65 @@ public class TetrisQAgent
             e.printStackTrace();
             System.exit(-1);
         }
-        return flattenedImage;
+        int rows = flattenedImage.getShape().getNumRows();
+        int cols = flattenedImage.getShape().getNumCols();
+
+        double[] columnHeights = new double[cols];
+        double holes = 0;
+        double totalHeight = 0;
+
+        for(int col = 0; col < cols; col++){
+            boolean foundBlock = false;
+            int colHeight = 0;
+            int colHoles = 0;
+
+            for(int row = 0; row < rows; row++){
+                double cellValue = flattenedImage.get(row, col);
+
+                //occupied cell
+                if(cellValue >= .5){
+                    if(!foundBlock){
+                        colHeight = rows - row;
+                        foundBlock = true;
+                    }
+                }else{
+                    if(foundBlock){
+                        colHoles++;
+                    }
+                }
+            }
+            columnHeights[col] = colHeight;
+            totalHeight += colHeight;
+            holes += colHoles;
+        }
+
+        int clearLines = 0;
+        for(int row = 0; row < rows; row++){
+            boolean rowFilled = true;
+            for(int col = 0; col < cols; col++){
+                if(flattenedImage.get(row, col) < .5){
+                    rowFilled = false;
+                    break;
+                }
+            }
+            if(rowFilled){
+                clearLines++;
+            }
+        }
+
+        ArrayList<Double> features = new ArrayList<>();
+        for(double heights : columnHeights){
+            features.add(heights);
+        }
+        features.add(totalHeight);
+        features.add(holes);
+        features.add((double)clearLines);
+
+        Matrix featureMatrix = Matrix.zeros(1, features.size());
+        for(int i = 0; i < features.size(); i++){
+            featureMatrix.set(0, i, features.get(i));
+        }
+        return featureMatrix;
     }
 
     /**
