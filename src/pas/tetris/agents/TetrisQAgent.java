@@ -57,15 +57,20 @@ public class TetrisQAgent
         final int numPixelsInImage = Board.NUM_ROWS * Board.NUM_COLS;
         final int numFeatures = numPixelsInImage + FEATURE_COUNT;
         final int hiddenDim1 = 64;
-        final int hiddenDim2 = 32;
+        final int hiddenDim2 = 64;
+        final int hiddenDim3 = 32;
         final int outDim = 1;
 
+        //Note: could add batch norm and drop out for each layer
         Sequential qFunction = new Sequential();
         qFunction.add(new Dense(numFeatures, hiddenDim1));
-        qFunction.add(new Tanh());
+        qFunction.add(new ReLU());
         qFunction.add(new Dense(hiddenDim1, hiddenDim2));
-        qFunction.add(new Tanh());
-        qFunction.add(new Dense(hiddenDim2, outDim));
+        qFunction.add(new ReLU());
+        qFunction.add(new Dense(hiddenDim2, hiddenDim3));
+        qFunction.add(new ReLU());
+
+        qFunction.add(new Dense(hiddenDim3, outDim));
 
         return qFunction;
     }
