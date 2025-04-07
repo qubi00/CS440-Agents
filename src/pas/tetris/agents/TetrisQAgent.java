@@ -53,13 +53,17 @@ public class TetrisQAgent
         // in this example, the input to the neural network is the
         // image of the board unrolled into a giant vector
         final int numPixelsInImage = Board.NUM_ROWS * Board.NUM_COLS;
-        final int hiddenDim = 2 * numPixelsInImage;
+        final int numFeatures = Board.NUM_COLS + 3;
+        final int hiddenDim1 = 64;
+        final int hiddenDim2 = 32;
         final int outDim = 1;
 
         Sequential qFunction = new Sequential();
-        qFunction.add(new Dense(numPixelsInImage, hiddenDim));
+        qFunction.add(new Dense(numFeatures, hiddenDim1));
         qFunction.add(new Tanh());
-        qFunction.add(new Dense(hiddenDim, outDim));
+        qFunction.add(new Dense(hiddenDim1, hiddenDim2));
+        qFunction.add(new Tanh());
+        qFunction.add(new Dense(hiddenDim2, outDim));
 
         return qFunction;
     }
