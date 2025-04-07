@@ -15,6 +15,7 @@ import edu.bu.pas.tetris.agents.TrainerAgent.GameCounter;
 import edu.bu.pas.tetris.game.Board;
 import edu.bu.pas.tetris.game.Game.GameView;
 import edu.bu.pas.tetris.game.minos.Mino;
+import edu.bu.pas.tetris.game.minos.Mino.MinoType;
 import edu.bu.pas.tetris.linalg.Matrix;
 import edu.bu.pas.tetris.nn.Model;
 import edu.bu.pas.tetris.nn.LossFunction;
@@ -33,6 +34,7 @@ public class TetrisQAgent
 {
 
     public static final double EXPLORATION_PROB = 0.05;
+    public static int FEATURE_COUNT = 0;
 
     private Random random;
 
@@ -53,7 +55,7 @@ public class TetrisQAgent
         // in this example, the input to the neural network is the
         // image of the board unrolled into a giant vector
         final int numPixelsInImage = Board.NUM_ROWS * Board.NUM_COLS;
-        final int numFeatures = numPixelsInImage + 3;
+        final int numFeatures = numPixelsInImage + FEATURE_COUNT;
         final int hiddenDim1 = 64;
         final int hiddenDim2 = 32;
         final int outDim = 1;
@@ -102,6 +104,7 @@ public class TetrisQAgent
         double[] columnHeights = new double[cols];
         double holes = 0;
         double totalHeight = 0;
+        double bumpiness = 0;
 
         for(int col = 0; col < cols; col++){
             boolean foundBlock = false;
@@ -128,6 +131,30 @@ public class TetrisQAgent
             holes += colHoles;
         }
 
+        for(int col = 0; col < cols - 1; col++){
+            bumpiness += Math.abs(columnHeights[col] - columnHeights[col+1]);
+        }
+
+        double maxHeight = 0;
+        double minHeight = Double.MAX_VALUE;
+        for(double height: columnHeights){
+            if(height > maxHeight){
+                maxHeight = height;
+            }
+            if(height < minHeight){
+                minHeight = height;
+            }
+        }
+        double heightVariation = maxHeight - minHeight;
+
+        double totalGapDepth = 0;
+        for(int col = 1; col < cols - 1; col++){
+            if(columnHeights[col] < columnHeights[col - 1] && columnHeights[col] < columnHeights[col + 1]){
+                totalGapDepth += Math.min(columnHeights[col - 1] - columnHeights[col], columnHeights[col + 1] - columnHeights[col]);
+            }
+        }
+
+
         int clearLines = 0;
         for(int row = 0; row < rows; row++){
             boolean rowFilled = true;
@@ -145,10 +172,39 @@ public class TetrisQAgent
         ArrayList<Double> features = new ArrayList<>();
         for(double heights : columnHeights){
             features.add(heights);
+            FEATURE_COUNT++;
         }
         features.add(totalHeight);
         features.add(holes);
         features.add((double)clearLines);
+        features.add(bumpiness);
+        features.add(maxHeight);
+        features.add(heightVariation);
+        features.add(totalGapDepth);
+        FEATURE_COUNT += 7;
+
+        double[] pieceOneHot = new double[7];
+        int typeIdx = potentialAction.getType().ordinal();  
+    
+        if(typeIdx >= 0 && typeIdx < 7){
+            pieceOneHot[typeIdx] = 1;
+        }
+        for(double val : pieceOneHot){
+            //adds all 7, only one is 1
+            features.add(val);
+            FEATURE_COUNT++;
+        }
+
+        double[] orientationOneHot = new double[4];
+        int orientationIdx = potentialAction.getOrientation().ordinal();
+        if(orientationIdx >= 0 && orientationIdx < 4){
+            orientationOneHot[orientationIdx] = 1;
+        }
+        for(double val : orientationOneHot){
+            //adds all 4 orientation, whether its A, B, C, or D
+            features.add(val);
+            FEATURE_COUNT++;
+        }
 
         Matrix featureMatrix = Matrix.zeros(1, features.size());
         for(int i = 0; i < features.size(); i++){
