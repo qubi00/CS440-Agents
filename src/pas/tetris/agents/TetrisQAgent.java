@@ -34,7 +34,6 @@ public class TetrisQAgent
 {
 
     public static final double EXPLORATION_PROB = 0.05;
-    public static int FEATURE_COUNT = 0;
     private static final int RECENT_WINDOW = 50;
     private List<Double> recentRewards = new ArrayList<>();
 
@@ -57,7 +56,7 @@ public class TetrisQAgent
         // in this example, the input to the neural network is the
         // image of the board unrolled into a giant vector
         final int numPixelsInImage = Board.NUM_ROWS * Board.NUM_COLS;
-        final int numFeatures = numPixelsInImage + FEATURE_COUNT;
+        final int numFeatures = numPixelsInImage + 18;
         final int hiddenDim1 = 64;
         final int hiddenDim2 = 64;
         final int hiddenDim3 = 32;
@@ -179,7 +178,6 @@ public class TetrisQAgent
         ArrayList<Double> features = new ArrayList<>();
         for(double heights : columnHeights){
             features.add(heights);
-            FEATURE_COUNT++;
         }
         features.add(totalHeight);
         features.add(holes);
@@ -188,7 +186,6 @@ public class TetrisQAgent
         features.add(maxHeight);
         features.add(heightVariation);
         features.add(totalGapDepth);
-        FEATURE_COUNT += 7;
 
         double[] pieceOneHot = new double[7];
         int typeIdx = potentialAction.getType().ordinal();  
@@ -199,7 +196,6 @@ public class TetrisQAgent
         for(double val : pieceOneHot){
             //adds all 7, only one is 1
             features.add(val);
-            FEATURE_COUNT++;
         }
 
         double[] orientationOneHot = new double[4];
@@ -210,7 +206,6 @@ public class TetrisQAgent
         for(double val : orientationOneHot){
             //adds all 4 orientation, whether its A, B, C, or D
             features.add(val);
-            FEATURE_COUNT++;
         }
 
         Matrix featureMatrix = Matrix.zeros(1, features.size());
