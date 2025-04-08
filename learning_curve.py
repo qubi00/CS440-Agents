@@ -6,7 +6,7 @@ import re                           # regular expressions
 
 
 LINE_PREAMBLE = "[INFO] TrainerAgent.onGameEnd: After "
-LINE_POSTAMBLE = "phase(s), avg trajectory utility = "
+LINE_POSTAMBLE = "cycle(s), avg trajectory utility = "
 
 
 def load(path: str) -> np.ndarray:
