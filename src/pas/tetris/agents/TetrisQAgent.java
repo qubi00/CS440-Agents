@@ -473,9 +473,9 @@ public class TetrisQAgent
                 clearedLines++;
             }
         }
-        double clearedLinesReward = clearedLines * 100;
+        double clearedLinesReward = Math.pow(2, clearedLines) * 50;
         if(clearedLines == 4){ //tetris
-            clearedLinesReward += 200;
+            clearedLinesReward += 400;
         }
 
         Matrix boardImage;
@@ -495,11 +495,14 @@ public class TetrisQAgent
         double totalHeight = 0.0;
         double holes = 0.0;
         double[] columnHeights = new double[cols];
+        double deepHoles = 0;
+        int maxHeight = 0;
         
         for(int col = 0; col < cols; col++){
             boolean blockFound = false;
             int colHeight = 0;
             int columnHoles = 0;
+            int deepHoleDepth = 0;
 
             for(int row = 0; row < rows; row++){
                 double cellValue = boardImage.get(row, col);
@@ -509,35 +512,67 @@ public class TetrisQAgent
                         colHeight = rows - row;
                         blockFound = true;
                     }
+                    deepHoleDepth = 0;
                 }else{
                     if(blockFound){
                         columnHoles++;
+                        deepHoleDepth++;
+                        if(deepHoleDepth > 1){
+                            deepHoles += deepHoleDepth - 1;
+                        }
                     }
                 }
             }
             columnHeights[col] = colHeight;
             totalHeight += colHeight;
             holes += columnHoles;
+
+            if(colHeight > maxHeight){
+                maxHeight = (int)colHeight;
+            }
         }
 
         double bumpiness = 0.0;
         for(int col = 0; col < cols - 1; col++){
             bumpiness += Math.abs(columnHeights[col] - columnHeights[col + 1]);
         }
-        
+
+        double wellReward = 0.0;
+        for(int col = 0; col < cols; col++){
+            boolean isWell = false;
+            
+            if(col == 0){
+                isWell = columnHeights[col] + 3 <= columnHeights[col + 1];
+            }else if(col == cols - 1){
+                isWell = columnHeights[col] + 3 <= columnHeights[col - 1];
+            }else{
+                isWell = columnHeights[col] + 3 <= columnHeights[col - 1] && 
+                        columnHeights[col] + 3 <= columnHeights[col + 1];
+            }
+            if(isWell){
+                wellReward += 30.0;
+            }
+        }
+
         //penalties for high stack and holes
-        double heightPenalty = totalHeight * .5;
-        double holesPenalty = holes * 15;
-        double bumpinessPenalty = bumpiness * .5;
+        double heightPenalty = totalHeight * .6;
+        double holesPenalty = holes * 20.0;
+        double bumpinessPenalty = bumpiness * .8;
+        double deepHolesPenalty = deepHoles * 10.0;
+
+        double heightThresholdPenalty = 0;
+        if(maxHeight > rows * .7){
+            heightThresholdPenalty = (maxHeight - (rows * .7)) * 50;
+        }
 
         boolean isGameOver = game.didAgentLose();
         double terminalPenalty = 0;
         if(isGameOver){
-            terminalPenalty = -1000;
+            terminalPenalty = -2000;
         }
 
-        double reward = scoreReward + clearedLinesReward - heightPenalty 
-        - holesPenalty - bumpinessPenalty + terminalPenalty;
+        double reward = scoreReward + clearedLinesReward + wellReward - heightPenalty 
+        - holesPenalty - deepHolesPenalty - bumpinessPenalty - heightThresholdPenalty + terminalPenalty;
 
         return reward;
     }
