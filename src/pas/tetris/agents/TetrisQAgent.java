@@ -55,11 +55,10 @@ public class TetrisQAgent
         // this example will create a 3-layer neural network (1 hidden layer)
         // in this example, the input to the neural network is the
         // image of the board unrolled into a giant vector
-        final int numPixelsInImage = Board.NUM_ROWS * Board.NUM_COLS;
-        final int numFeatures = numPixelsInImage + 18;
-        final int hiddenDim1 = 64;
+        final int numFeatures = 7;
+        final int hiddenDim1 = 32;
         final int hiddenDim2 = 64;
-        final int hiddenDim3 = 32;
+        final int hiddenDim3 = 64;
         final int outDim = 1;
 
         //Note: could add batch norm and drop out for each layer
@@ -98,7 +97,7 @@ public class TetrisQAgent
         Matrix flattenedImage = null;
         try
         {
-            flattenedImage = game.getGrayscaleImage(potentialAction).flatten();
+            flattenedImage = game.getGrayscaleImage(potentialAction);
         } catch(Exception e)
         {
             e.printStackTrace();
@@ -176,9 +175,7 @@ public class TetrisQAgent
         }
 
         ArrayList<Double> features = new ArrayList<>();
-        for(double heights : columnHeights){
-            features.add(heights);
-        }
+
         features.add(totalHeight);
         features.add(holes);
         features.add((double)clearLines);
@@ -193,19 +190,11 @@ public class TetrisQAgent
         if(typeIdx >= 0 && typeIdx < 7){
             pieceOneHot[typeIdx] = 1;
         }
-        for(double val : pieceOneHot){
-            //adds all 7, only one is 1
-            features.add(val);
-        }
 
         double[] orientationOneHot = new double[4];
         int orientationIdx = potentialAction.getOrientation().ordinal();
         if(orientationIdx >= 0 && orientationIdx < 4){
             orientationOneHot[orientationIdx] = 1;
-        }
-        for(double val : orientationOneHot){
-            //adds all 4 orientation, whether its A, B, C, or D
-            features.add(val);
         }
 
         Matrix featureMatrix = Matrix.zeros(1, features.size());
@@ -456,125 +445,126 @@ public class TetrisQAgent
     {
         double scoreReward = game.getScoreThisTurn();
 
-        int clearedLines = 0;
-        Board board = game.getBoard();
-        int rows = board.NUM_ROWS;
-        int cols = board.NUM_COLS;
+        // int clearedLines = 0;
+        // Board board = game.getBoard();
+        // int rows = board.NUM_ROWS;
+        // int cols = board.NUM_COLS;
     
-        for(int row = 0; row < rows; row++){
-            boolean fullRow = true;
-            for(int col = 0; col < cols; col++){
-                if(!board.isCoordinateOccupied(col, row)){
-                    fullRow = false;
-                    break;
-                }
-            }
-            if(fullRow){
-                clearedLines++;
-            }
-        }
-        double clearedLinesReward = Math.pow(2, clearedLines) * 50;
-        if(clearedLines == 4){ //tetris
-            clearedLinesReward += 400;
-        }
+        // for(int row = 0; row < rows; row++){
+        //     boolean fullRow = true;
+        //     for(int col = 0; col < cols; col++){
+        //         if(!board.isCoordinateOccupied(col, row)){
+        //             fullRow = false;
+        //             break;
+        //         }
+        //     }
+        //     if(fullRow){
+        //         clearedLines++;
+        //     }
+        // }
+        // double clearedLinesReward = Math.pow(2, clearedLines) * 50;
+        // if(clearedLines == 4){ //tetris
+        //     clearedLinesReward += 400;
+        // }
 
-        Matrix boardImage;
-        List<Mino> finalMinos = game.getFinalMinoPositions();
-        if(finalMinos == null || finalMinos.isEmpty()){
-            return scoreReward + clearedLinesReward;
-        }
-        Mino lastPlaced = finalMinos.get(finalMinos.size() - 1);
-        try {
-            boardImage = game.getGrayscaleImage(lastPlaced);
-        } catch (Exception e) {
-            e.printStackTrace();
-            return scoreReward + clearedLinesReward;
-        }
+        // Matrix boardImage;
+        // List<Mino> finalMinos = game.getFinalMinoPositions();
+        // if(finalMinos == null || finalMinos.isEmpty()){
+        //     return scoreReward + clearedLinesReward;
+        // }
+        // Mino lastPlaced = finalMinos.get(finalMinos.size() - 1);
+        // try {
+        //     boardImage = game.getGrayscaleImage(lastPlaced);
+        // } catch (Exception e) {
+        //     e.printStackTrace();
+        //     return scoreReward + clearedLinesReward;
+        // }
         
 
-        double totalHeight = 0.0;
-        double holes = 0.0;
-        double[] columnHeights = new double[cols];
-        double deepHoles = 0;
-        int maxHeight = 0;
+        // double totalHeight = 0.0;
+        // double holes = 0.0;
+        // double[] columnHeights = new double[cols];
+        // double deepHoles = 0;
+        // int maxHeight = 0;
         
-        for(int col = 0; col < cols; col++){
-            boolean blockFound = false;
-            int colHeight = 0;
-            int columnHoles = 0;
-            int deepHoleDepth = 0;
+        // for(int col = 0; col < cols; col++){
+        //     boolean blockFound = false;
+        //     int colHeight = 0;
+        //     int columnHoles = 0;
+        //     int deepHoleDepth = 0;
 
-            for(int row = 0; row < rows; row++){
-                double cellValue = boardImage.get(row, col);
+        //     for(int row = 0; row < rows; row++){
+        //         double cellValue = boardImage.get(row, col);
                 
-                if(cellValue >= 0.5){
-                    if(!blockFound){
-                        colHeight = rows - row;
-                        blockFound = true;
-                    }
-                    deepHoleDepth = 0;
-                }else{
-                    if(blockFound){
-                        columnHoles++;
-                        deepHoleDepth++;
-                        if(deepHoleDepth > 1){
-                            deepHoles += deepHoleDepth - 1;
-                        }
-                    }
-                }
-            }
-            columnHeights[col] = colHeight;
-            totalHeight += colHeight;
-            holes += columnHoles;
+        //         if(cellValue >= 0.5){
+        //             if(!blockFound){
+        //                 colHeight = rows - row;
+        //                 blockFound = true;
+        //             }
+        //             deepHoleDepth = 0;
+        //         }else{
+        //             if(blockFound){
+        //                 columnHoles++;
+        //                 deepHoleDepth++;
+        //                 if(deepHoleDepth > 1){
+        //                     deepHoles += deepHoleDepth - 1;
+        //                 }
+        //             }
+        //         }
+        //     }
+        //     columnHeights[col] = colHeight;
+        //     totalHeight += colHeight;
+        //     holes += columnHoles;
 
-            if(colHeight > maxHeight){
-                maxHeight = (int)colHeight;
-            }
-        }
+        //     if(colHeight > maxHeight){
+        //         maxHeight = (int)colHeight;
+        //     }
+        // }
 
-        double bumpiness = 0.0;
-        for(int col = 0; col < cols - 1; col++){
-            bumpiness += Math.abs(columnHeights[col] - columnHeights[col + 1]);
-        }
+        // double bumpiness = 0.0;
+        // for(int col = 0; col < cols - 1; col++){
+        //     bumpiness += Math.abs(columnHeights[col] - columnHeights[col + 1]);
+        // }
 
-        double wellReward = 0.0;
-        for(int col = 0; col < cols; col++){
-            boolean isWell = false;
+        // double wellReward = 0.0;
+        // for(int col = 0; col < cols; col++){
+        //     boolean isWell = false;
             
-            if(col == 0){
-                isWell = columnHeights[col] + 3 <= columnHeights[col + 1];
-            }else if(col == cols - 1){
-                isWell = columnHeights[col] + 3 <= columnHeights[col - 1];
-            }else{
-                isWell = columnHeights[col] + 3 <= columnHeights[col - 1] && 
-                        columnHeights[col] + 3 <= columnHeights[col + 1];
-            }
-            if(isWell){
-                wellReward += 30.0;
-            }
-        }
+        //     if(col == 0){
+        //         isWell = columnHeights[col] + 3 <= columnHeights[col + 1];
+        //     }else if(col == cols - 1){
+        //         isWell = columnHeights[col] + 3 <= columnHeights[col - 1];
+        //     }else{
+        //         isWell = columnHeights[col] + 3 <= columnHeights[col - 1] && 
+        //                 columnHeights[col] + 3 <= columnHeights[col + 1];
+        //     }
+        //     if(isWell){
+        //         wellReward += 30.0;
+        //     }
+        // }
 
-        //penalties for high stack and holes
-        double heightPenalty = totalHeight * .6;
-        double holesPenalty = holes * 20.0;
-        double bumpinessPenalty = bumpiness * .8;
-        double deepHolesPenalty = deepHoles * 10.0;
+        // //penalties for high stack and holes
+        // double heightPenalty = totalHeight * .6;
+        // double holesPenalty = holes * 20.0;
+        // double bumpinessPenalty = bumpiness * .8;
+        // double deepHolesPenalty = deepHoles * 10.0;
 
-        double heightThresholdPenalty = 0;
-        if(maxHeight > rows * .7){
-            heightThresholdPenalty = (maxHeight - (rows * .7)) * 50;
-        }
+        // double heightThresholdPenalty = 0;
+        // if(maxHeight > rows * .7){
+        //     heightThresholdPenalty = (maxHeight - (rows * .7)) * 50;
+        // }
 
-        boolean isGameOver = game.didAgentLose();
-        double terminalPenalty = 0;
-        if(isGameOver){
-            terminalPenalty = -2000;
-        }
+        // boolean isGameOver = game.didAgentLose();
+        // double terminalPenalty = 0;
+        // if(isGameOver){
+        //     terminalPenalty = -2000;
+        // }
 
-        double reward = scoreReward + clearedLinesReward + wellReward - heightPenalty 
-        - holesPenalty - deepHolesPenalty - bumpinessPenalty - heightThresholdPenalty + terminalPenalty;
+        // double reward = (scoreReward * 100 + clearedLinesReward + wellReward - heightPenalty 
+        // - holesPenalty - deepHolesPenalty - bumpinessPenalty - heightThresholdPenalty + terminalPenalty);
 
-        return reward;
+        // return reward;
+        return scoreReward;
     }
 
 }
