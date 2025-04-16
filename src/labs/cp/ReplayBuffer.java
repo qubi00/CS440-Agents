@@ -114,6 +114,36 @@ public class ReplayBuffer
         //      - We want to update any indexing information that we would need to keep the replacementType going
         //          - if there is space left, we need to increment this.getSize()
         //          - if there isn't space left and we have OLDEST replacement, we need to increment this.getNewestSampleIdx
+        int insertPos = 0;
+        int capacity = this.getPrevStates().getShape().getNumRows();
+        //there is space left
+        if(this.size() < capacity){
+            insertPos = this.size();
+            this.setSize(this.size() + 1);
+        }else{
+            insertPos = chooseSampleToEvict();
+        }
+
+        int dim = prevState.getShape().getNumCols(); 
+        for(int col = 0; col < dim; col++){
+            double value = prevState.get(0, col);
+            this.getPrevStates().set(insertPos, col, value);
+        }
+
+        this.getRewards().set(insertPos, 0, reward);
+        if(nextState != null){
+            dim = nextState.getShape().getNumCols(); 
+            for(int col = 0; col < dim; col++){
+                double value = nextState.get(0, col);
+                this.getPrevStates().set(insertPos, col, value);
+            }
+            this.getIsStateTerminalMask()[insertPos] = false;
+        }else{
+            this.getIsStateTerminalMask()[insertPos] = true;
+        }
+
+        this.setNewestSampleIdx(insertPos);
+        
     }
 
     public static double max(Matrix qValues) throws IndexOutOfBoundsException
@@ -159,8 +189,27 @@ public class ReplayBuffer
         // which could either be (s, r, s') or (s, r, null), so when calculating the bellman update for that row,
         // you need to check the mask to see which version you're calculating! 
 
+        Matrix groundTruth = Matrix.zeros(this.size(), 1);
 
-        return null;
+        for(int i = 0; i < this.size(); i++){
+            double reward = this.getRewards().get(i, 0);
+            
+            if(!this.getIsStateTerminalMask()[i]){
+                try{
+                    Matrix nextState = this.getNextStates().getRow(i);
+                    Matrix qValues = qFunction.forward(nextState);
+                    double maxQ = ReplayBuffer.max(qValues);
+                    groundTruth.set(i, 0, reward + discountFactor * maxQ);
+                }catch(Exception e){
+                    e.printStackTrace();
+                    System.exit(-1);
+                }
+            }else{
+                groundTruth.set(i, 0, reward);
+            }
+        }
+
+        return groundTruth;
     }
 
     public Pair<Matrix, Matrix> getTrainingData(Model qFunction,

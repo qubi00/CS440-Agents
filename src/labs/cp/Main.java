@@ -94,11 +94,34 @@ public class Main
                              Namespace ns)      // namespace of command line arguments
     {
         long numTrainingGames = ns.get("numTrainingGames");
+        long seed = ns.get("seed");
+        Random rng = new Random(seed);
         for(int gameIdx = 0; gameIdx < numTrainingGames; ++gameIdx)
         {
             // TODO: complete me!
             // play a bunch of training games where you are not allowed to update the neural network
             // make sure to add transitions that you observe to the replay buffer, including the terminal transition!
+            Matrix state = game.reset();
+            boolean isDone = false;
+            Matrix nextState;
+            double reward;
+
+            while(!isDone){
+                int action = rng.nextInt(2);
+                Triple<Matrix, Double, Boolean> observation = game.step(action);
+                nextState = observation.getFirst();
+                reward = observation.getSecond();
+                isDone = observation.getThird();
+            
+
+                if(isDone){
+                    rb.addSample(state, reward, null);
+                }else{
+                    rb.addSample(state, reward, nextState);
+                }
+
+                state = nextState;
+            }
         }
     }
 
