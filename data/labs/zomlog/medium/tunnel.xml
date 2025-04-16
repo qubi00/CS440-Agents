@@ -8,13 +8,13 @@
             <Argument>MEDIUM</Argument>
 		</AgentClass>
 	</Player>
-	<Player Id="0">
+	<!-- <Player Id="0">
 		<AgentClass>
 			<ClassName>edu.cwru.sepia.agent.visual.VisualAgent</ClassName>
 			<Argument>true</Argument>
 			<Argument>false</Argument>
 		</AgentClass>
-	</Player>
+	</Player> -->
 	<Player Id="1">
 		<AgentClass>
 			<ClassName>edu.bu.labs.zomlog.agents.ZombieAgent</ClassName>

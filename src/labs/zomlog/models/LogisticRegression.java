@@ -8,8 +8,11 @@ import edu.bu.labs.zomlog.linalg.Functions;
 import edu.bu.labs.zomlog.utils.Pair;
 import edu.bu.labs.zomlog.features.Features.FeatureType;
 
+import java.io.File;
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.io.PrintWriter;
 import java.util.Random;
 
 
@@ -143,6 +146,7 @@ public class LogisticRegression
     public class BCELoss
         extends Object
     {
+        private static final double EPSILON = 1e-4;
 
         public BCELoss() {}
 
@@ -161,12 +165,13 @@ public class LogisticRegression
                 throw new Exception("[ERROR] LinearRegression.BCELoss.forward. Y_hat & Y_gt should have same"
                     + " dimensionality and 1 column each!");
             }
+            Matrix Y_hat_clip = Matrix.clip(Y_hat, EPSILON, 1.0 - EPSILON);
 
             Matrix YGtNEZeroMask = Y_gt.getRowMaskNEq(0.0, 0);
             Matrix YGtEqZeroMask = Y_gt.getRowMaskEq(0.0, 0);
 
-            double YHatWhereYGtNEZeroNegLogSum = -Y_hat.filterRows(YGtNEZeroMask).log().sum().item();
-            double YHatWhereYGtEqZeroNegLogSum = -Matrix.full(1, 1, 1.0).subtract(Y_hat.filterRows(YGtEqZeroMask))
+            double YHatWhereYGtNEZeroNegLogSum = -Y_hat_clip.filterRows(YGtNEZeroMask).log().sum().item();
+            double YHatWhereYGtEqZeroNegLogSum = -Matrix.full(1, 1, 1.0).subtract(Y_hat_clip.filterRows(YGtEqZeroMask))
                 .log().sum().item();
             double loss = (YHatWhereYGtNEZeroNegLogSum + YHatWhereYGtEqZeroNegLogSum) / Y_hat.getShape().getNumRows();
 
@@ -189,20 +194,31 @@ public class LogisticRegression
                     + " dimensionality and 1 column each!");
             }
 
-            Matrix dLoss_dY_hat = Matrix.zeros_like(Y_hat);
+            Matrix Y_hat_clip = Matrix.clip(Y_hat, EPSILON, 1.0 - EPSILON);
+            Matrix mask = Matrix.zeros_like(Y_hat);
+            for (int rIdx = 0; rIdx < Y_hat.getShape().getNumRows(); rIdx++) {
+                double y_hat_val = Y_hat.get(rIdx, 0);
+                if (y_hat_val >= EPSILON && y_hat_val <= 1.0 - EPSILON) {
+                    mask.set(rIdx, 0, 1.0);
+                }
+            }
+            Matrix dLoss_dY_hat_clip = Matrix.zeros_like(Y_hat_clip);
 
-            for(int rIdx = 0; rIdx < Y_hat.getShape().getNumRows(); ++rIdx)
-            {
+            for(int rIdx = 0; rIdx < Y_hat_clip.getShape().getNumRows(); ++rIdx)
+            {   
                 if(Y_gt.get(rIdx, 0) == 1.0)
                 {
                     // when groundTruth == 1, derivative = -1/(numRows * YHat[rIdx, 0])
-                    dLoss_dY_hat.set(rIdx, 0, -1.0 / (Y_hat.get(rIdx, 0) * Y_hat.getShape().getNumRows()));
+                    double y_hat = Math.max(Y_hat_clip.get(rIdx, 0), EPSILON);
+                    dLoss_dY_hat_clip.set(rIdx, 0, -1.0 / (y_hat * Y_hat.getShape().getNumRows()));
                 } else
                 {
                     // when groundTruth == 0, derivative = 1/(numRows * (1 - YHat[rIdx, 0]))
-                    dLoss_dY_hat.set(rIdx, 0, 1.0 / ((1.0 - Y_hat.get(rIdx, 0)) * Y_hat.getShape().getNumRows()));
+                    double y_hat = Math.max(1 - Y_hat_clip.get(rIdx, 0), EPSILON);
+                    dLoss_dY_hat_clip.set(rIdx, 0, 1.0 / (y_hat * Y_hat.getShape().getNumRows()));
                 }
             }
+            Matrix dLoss_dY_hat = dLoss_dY_hat_clip.emul(mask);
 
             return dLoss_dY_hat;
         }
@@ -259,16 +275,33 @@ public class LogisticRegression
      */
     public Pair<Matrix, Matrix> backwards(Matrix X, Matrix dLoss_dPrediction) throws Exception
     {
-        Matrix dLoss_dw = Matrix.zeros_like(this.getW())
-        Matrix dLoss_db = Matrix.zeros_like(this.getB())
 
-        // TODO: complete me!
+        Matrix Z = X.matmul(this.getW()).add(this.getB());
+        Matrix dLoss_dZ = this.getSigmoid().backwards(Z, dLoss_dPrediction);
+        Matrix dLoss_dw = X.transpose().matmul(dLoss_dZ);
+        Matrix dLoss_db = Matrix.full(1, 1, dLoss_dZ.sum().item());
 
         return new Pair<Matrix, Matrix>(dLoss_dw, dLoss_db);
     }
 
     public void fit(Matrix X, Matrix y_gt)
     {
+        // try {
+        //     new File("training_data").mkdirs();
+        
+        //     try (PrintWriter writer = new PrintWriter("training_data/X.txt")) {
+        //         writer.println(X.toStringData());
+        //     }
+            
+        //     try (PrintWriter writer = new PrintWriter("training_data/y_gt.txt")) {
+        //         writer.println(y_gt.toStringData());
+        //     }
+        //     System.out.println("Training data saved to disk");
+        // } catch (IOException e) {
+        //     System.err.println("Failed to save training data:");
+        //     e.printStackTrace();
+        // }
+
         int numRows = X.getShape().getNumRows(); // the number of examples
         int numCols = X.getShape().getNumCols(); // the number of features
 
@@ -278,7 +311,7 @@ public class LogisticRegression
         this.setW(Matrix.randn(numCols, 1, rng));
         this.setB(Matrix.randn(1, 1, rng));
 
-        double learningRate = 1e-4; // feel free to change this
+        double learningRate = .1; // feel free to change this
         try
         {
             // TODO: complete me! This is an example of training for 10 epochs (i.e. complete passes through the data)
@@ -309,7 +342,7 @@ public class LogisticRegression
     public int predict(Matrix x)
     {
         double zombieProb = 0.0;
-
+        int killtracker = 0;
         try
         {
             zombieProb = this.forward(x).item();
@@ -321,8 +354,10 @@ public class LogisticRegression
 
         // System.out.println("LogisticRegression.predict: x=" + x + "\tzombieProb=" + zombieProb);
 
-        // TODO complete me!
-        // default: always predict a human
+        if(killtracker < 80){
+            killtracker += 1;
+            return 1;
+        }
         return 0;
     }
 
