@@ -32,7 +32,7 @@ public class ValueIterationAgent
     extends StochasticAgent
 {
 
-    public static final double GAMMA = 0.1; // feel free to change this around!
+    public static final double GAMMA = 0.9; // feel free to change this around!
     public static final double EPSILON = 1e-6; // don't change this though
 
     private Map<Coordinate, Double> utilities;
@@ -86,7 +86,7 @@ public class ValueIterationAgent
                     newUVal = RewardFunction.getReward(c);
                     newU.put(c, newUVal);
                 }else{
-                    double best = Double.MIN_VALUE;
+                    double best = Double.NEGATIVE_INFINITY;
 
                     for(Direction d : TransitionModel.CARDINAL_DIRECTIONS){
                         double expected = 0;
